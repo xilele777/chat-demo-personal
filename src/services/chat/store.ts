@@ -1,4 +1,8 @@
 import { create } from 'zustand'
+import { cloudMode, useCloud } from '../cloud.js'
+import * as cloudDb from './cloudDb.js'
+import * as localDb from './localDb.js'
+import { translate } from '../../i18n/index.js'
 import { createId } from '../../utils/id.js'
 import { ApiError, streamMessage } from '../api/client.js'
 import type { ChatModel, CreateMessageRequest } from '../api/types.js'
@@ -226,7 +230,154 @@ const persist = (sessionId: string) => {
 
 export const retrySaveSessions = () => {
   if (!get().importingHistory) {
-    unsavedSessions.forEach(persist)
+    unsavedSessions.forEach((id) => {
+      if (getSession(id)) {
+        persist(id)
+      } else if (cloudMode) {
+        void ensureSessionLoaded(id).then(() => persist(id))
+      }
+    })
+  }
+}
+
+/** Refresh only when local work is saved. Recheck identities after I/O so a late
+ * response cannot replace edits or a generation started while the request ran. */
+export const syncCloudSessions = async (): Promise<void> => {
+  if (
+    !cloudMode ||
+    !get().ready ||
+    useCloud.getState().syncing ||
+    get().importingHistory ||
+    unsavedSessions.size ||
+    cloudDb.pendingIds().length ||
+    Object.keys(get().streaming).length
+  ) {
+    return
+  }
+  const before = get()
+  useCloud.setState({ syncing: true })
+  const unchanged = () =>
+    get().sessionCache === before.sessionCache &&
+    get().sessions === before.sessions &&
+    get().activeId === before.activeId &&
+    !get().importingHistory &&
+    !unsavedSessions.size &&
+    !Object.keys(get().streaming).length
+  try {
+    const index = await cloudDb.readIndex()
+    if (!unchanged()) {
+      return
+    }
+    const active =
+      before.activeId && index.sessions.some((s) => s.id === before.activeId)
+        ? await cloudDb.loadSession(before.activeId)
+        : undefined
+    if (!unchanged()) {
+      return
+    }
+    // Closed details are discarded; selecting them loads the current cloud version.
+    set({
+      sessions: sortSessions(index.sessions.map(toSessionSummary)),
+      sessionCache: active ? { [active.id]: settleInterrupted(normalizeSession(active)) } : {},
+      activeId: active?.id ?? null,
+      sessionLoadErrors: {},
+    })
+    useCloud.setState({ error: null, lastSyncedAt: Date.now() })
+  } catch (error) {
+    useCloud.setState({ error: error instanceof Error ? error.message : 'Sync failed' })
+  } finally {
+    useCloud.setState({ syncing: false })
+  }
+}
+
+export const bindCloudSync = () => {
+  if (!cloudMode) {
+    return () => {}
+  }
+  const refresh = () => {
+    if (document.visibilityState === 'visible') {
+      void syncCloudSessions()
+    }
+  }
+  const timer = setInterval(refresh, 15_000)
+  window.addEventListener('focus', refresh)
+  window.addEventListener('online', refresh)
+  document.addEventListener('visibilitychange', refresh)
+  return () => {
+    clearInterval(timer)
+    window.removeEventListener('focus', refresh)
+    window.removeEventListener('online', refresh)
+    document.removeEventListener('visibilitychange', refresh)
+  }
+}
+
+/** Preserve unsynced edits under fresh IDs before replacing the visible cache. */
+export const keepCopiesAndSync = async (): Promise<void> => {
+  if (!cloudMode || get().importingHistory || Object.keys(get().streaming).length) {
+    return
+  }
+  set({ importingHistory: true })
+  try {
+    await cloudDb.readIndex()
+    const ids = [...new Set([...unsavedSessions, ...cloudDb.pendingIds()])]
+    for (const id of ids) {
+      const session = getSession(id) ?? (await cloudDb.loadSession(id))
+      if (!session) {
+        continue
+      }
+      const copy: Session = {
+        ...session,
+        id: createId(),
+        cloud: cloudDb.newStamp(),
+        title: `${session.title || translate('untitledChat')} (${translate('cloudLocalCopy')})`,
+        updatedAt: Date.now(),
+      }
+      await db.saveSession(copy, pendingFiles.get(id))
+    }
+    await cloudDb.forgetPending(ids)
+    ids.forEach((id) => {
+      unsavedSessions.delete(id)
+      pendingFiles.delete(id)
+    })
+    set({ sessionCache: {}, sessionSaveErrors: {}, activeId: null })
+  } catch (error) {
+    useCloud.setState({ error: error instanceof Error ? error.message : 'Sync failed' })
+  } finally {
+    set({ importingHistory: false })
+  }
+  await syncCloudSessions()
+}
+
+/** Explicitly migrate this origin's pre-cloud IndexedDB sessions as new cloud copies. */
+export const uploadLocalHistory = async (): Promise<number> => {
+  if (
+    !cloudMode ||
+    get().importingHistory ||
+    Object.keys(get().streaming).length ||
+    unsavedSessions.size
+  ) {
+    throw new Error(translate('cloudWaitForSave'))
+  }
+  set({ importingHistory: true })
+  let count = 0
+  try {
+    await cloudDb.readIndex()
+    for (const summary of await localDb.loadSessionSummaries()) {
+      const session = await localDb.loadSession(summary.id)
+      if (!session) {
+        continue
+      }
+      await db.saveSession({
+        ...settleInterrupted(normalizeSession(session)),
+        id: createId(),
+        cloud: cloudDb.newStamp(),
+      })
+      count++
+    }
+    return count
+  } finally {
+    set({ importingHistory: false })
+    await syncCloudSessions()
   }
 }
 
@@ -266,9 +417,9 @@ const createReply = (): AssistantMessage => {
     id: createId(),
     role: 'assistant',
     createdAt: Date.now(),
-    model: MODEL,
-    thinking,
-    search,
+    model: cloudMode ? (useCloud.getState().config?.model ?? MODEL) : MODEL,
+    thinking: thinking && (!cloudMode || Boolean(useCloud.getState().config?.thinking)),
+    search: search && (!cloudMode || Boolean(useCloud.getState().config?.search)),
     prefix: true,
     status: 'pending',
     blocks: [],
@@ -307,7 +458,17 @@ export const initChat = (): Promise<void> => {
     try {
       const summaries = await db.loadSessionSummaries()
       if (epoch === historyEpoch) {
+        if (cloudMode) {
+          for (const id of cloudDb.pendingIds()) {
+            unsavedSessions.add(id)
+          }
+        }
         set({ ready: true, sessions: sortSessions(summaries) })
+        if (cloudMode && unsavedSessions.size) {
+          set({
+            sessionSaveErrors: Object.fromEntries([...unsavedSessions].map((id) => [id, true])),
+          })
+        }
       }
     } catch (error) {
       if (epoch === historyEpoch) {
@@ -354,7 +515,7 @@ const ensureSessionLoaded = (id: string): Promise<void> => {
       const session = sameSummary(settled, summary) ? settled : { ...settled, ...summary }
       touchSession(id)
       set((state) => ({ sessionCache: { ...state.sessionCache, [id]: session } }))
-      if (session !== stored) {
+      if (session !== stored || (cloudMode && cloudDb.pendingIds().includes(id))) {
         persist(id)
       }
       trimSessionCache()
@@ -479,7 +640,12 @@ export const renameSession = (id: string, title: string) => {
         session.id === id ? { ...session, title } : session
       ),
     }))
-    void db.renameSession(id, title).catch(db.reportStorageError('rename session'))
+    if (cloudMode) {
+      // Loading merges the just-edited list title into the detail, then persists it.
+      void ensureSessionLoaded(id)
+    } else {
+      void db.renameSession(id, title).catch(db.reportStorageError('rename session'))
+    }
   }
 }
 
@@ -570,8 +736,12 @@ export const sendMessage = (targetSessionId: string | null) => {
   }
   if (sessionId === null) {
     const session: Session = {
+      ...(cloudMode ? { cloud: cloudDb.newStamp() } : {}),
       id: createId(),
-      title: '',
+      title:
+        cloudMode && useCloud.getState().config?.protocol !== 'deepseek'
+          ? (text || files[0]?.name || '').slice(0, 60)
+          : '',
       createdAt: now,
       updatedAt: now,
       messages: [],
@@ -1024,7 +1194,10 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           useSettings.getState().apiKey ?? '',
           {
             model: initial.model ?? MODEL,
-            system: SYSTEM_PROMPT,
+            system:
+              cloudMode && useCloud.getState().config?.protocol !== 'deepseek'
+                ? 'You are a helpful assistant.'
+                : SYSTEM_PROMPT,
             messages,
             thinking: { type: initial.thinking ? 'enabled' : 'disabled' },
             safety_check: SAFETY_CHECK,

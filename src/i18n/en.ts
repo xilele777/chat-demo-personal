@@ -1,6 +1,47 @@
 import type { zh } from './zh.js'
 
 export const en = {
+  cloudSignIn: 'Open personal space',
+  cloudSignInDescription:
+    'Enter your access password to continue. This device stays signed in for 30 days.',
+  cloudPasswordLabel: 'Access password',
+  cloudPasswordShow: 'Show',
+  cloudPasswordHide: 'Hide',
+  cloudPasswordWrong: 'Incorrect password. Please try again.',
+  cloudPasswordRateLimited: 'Too many attempts. Try again in 15 minutes.',
+  cloudPasswordSetup:
+    'Set a Secret named APP_PASSWORD (at least 12 characters) under Cloudflare → personal-chat → Settings → Variables and Secrets. Save, deploy, and refresh.',
+  cloudSigningIn: 'Signing in…',
+  cloudForgotPassword: 'Forgot your password? Change APP_PASSWORD in Cloudflare to reset it.',
+  cloudSignOut: 'Sign out',
+  cloudSignOutDescription:
+    'Enter your password again next time. Cloud chats and unsynced local copies are kept.',
+  cloudTitle: 'Personal cloud space',
+  cloudConnectFailed:
+    'Unable to connect. Check your connection and retry. See the deployment guide for configuration.',
+  cloudSaveFailed:
+    'Some changes are not synced and are saved on this device. If another device edited this chat, keep a copy and sync.',
+  cloudKeepCopies: 'Keep copies and sync',
+  cloudLocalCopy: 'local copy',
+  cloudSync: 'Sync now',
+  cloudSyncing: 'Syncing…',
+  cloudSyncDescription:
+    'Chats and attachments are stored in your cloud space. Sync runs when you return and checks every 15 seconds while visible.',
+  cloudSynced: 'Last synced: {time}',
+  cloudProvider: 'Model service',
+  cloudConfigured: 'The API key is configured in the cloud. No need to enter it on each device.',
+  cloudNotConfigured:
+    'The model service is not configured. Complete the secret setup in the deployment guide.',
+  cloudMigrate: 'Upload local history',
+  cloudMigrateDescription:
+    'Upload this origin’s existing local chats as new copies without replacing cloud history. Export a ZIP first to move history from another site.',
+  cloudMigrated: 'Uploaded {count} chat copies',
+  cloudWaitForSave: 'Wait for replies to finish and changes to save first.',
+  cloudFeatureUnavailable: 'This feature is not enabled for the current provider',
+  cloudDeleteDescription:
+    'Delete all cloud chats. Other devices will remove them on their next sync. This cannot be undone.',
+  cloudImportDescription:
+    'Importing a ZIP replaces all cloud chats and syncs the replacement to other devices.',
   welcomeMessageChat250808: 'How can I help you?',
   contentCaveat: 'AI-generated, for reference only',
   expandSiderbarButton: 'Open sidebar',
