@@ -14,6 +14,7 @@
     "db:local": "wrangler d1 migrations apply personal-chat --local",
     "db:remote": "wrangler d1 migrations apply personal-chat --remote",
     "type:worker": "tsc -p tsconfig.worker.json",
+    "test:cloud": "node --import tsx scripts/smoke-cloud.mjs",
     "type": "tsc -p tsconfig.json",
     "lint": "oxlint src worker rspack.config.ts",
     "format": "oxfmt --write ."
