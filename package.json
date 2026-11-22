@@ -8,8 +8,9 @@
   "scripts": {
     "dev": "rspack serve -c rspack.config.ts",
     "build": "node scripts/build.mjs",
+    "type:worker": "tsc -p tsconfig.worker.json",
     "type": "tsc -p tsconfig.json",
-    "lint": "oxlint src rspack.config.ts",
+    "lint": "oxlint src worker rspack.config.ts",
     "format": "oxfmt --write ."
   },
   "dependencies": {
@@ -21,6 +22,7 @@
     "clsx": "2.1.1",
     "fflate": "0.8.3",
     "idb": "8.0.3",
+    "jose": "^6.2.18",
     "katex": "0.16.22",
     "mdast-util-find-and-replace": "3.0.2",
     "mdast-util-from-markdown": "2.0.3",
@@ -34,7 +36,14 @@
     "react-dom": "18.3.1",
     "zustand": "4.4.7"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd"
+    ]
+  },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261121.1",
     "@rspack/cli": "2.0.2",
     "@rspack/core": "2.0.2",
     "@rspack/dev-server": "2.0.1",
@@ -42,6 +51,8 @@
     "@types/node": "~20.9.2",
     "oxfmt": "0.48.0",
     "oxlint": "1.63.0",
-    "typescript": "7.0.2"
+    "tsx": "^4.23.15",
+    "typescript": "7.0.2",
+    "wrangler": "^4.166.0"
   }
 }
