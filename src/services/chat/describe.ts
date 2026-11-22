@@ -1,5 +1,7 @@
 import { isTranslationKey, translate } from '../../i18n/index.js'
 import { classifyStatus } from '../api/errors.js'
+import { providerErrorMessage } from '../api/errorMessage.js'
+import { cloudMode } from '../cloud.js'
 import type { AssistantMessage } from './types.js'
 
 export type Notice = {
@@ -30,6 +32,12 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
     }
     if (kind === 'network') {
       return { text: translate('commonNetworkErrorToast') }
+    }
+    if (cloudMode && message) {
+      const detail = providerErrorMessage(message)
+      if (detail) {
+        return { text: status ? `${detail} (HTTP ${status})` : detail }
+      }
     }
     switch (classifyStatus(status)) {
       case 'unauthorized':
