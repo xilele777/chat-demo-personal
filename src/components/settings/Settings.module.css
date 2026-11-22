@@ -1,4 +1,4 @@
-.dialog {
+.dialog.dialog {
   --modal-header-gap: 7px;
   width: 760px;
   height: 500px;
@@ -289,7 +289,7 @@
 }
 
 @media not all and (min-width: 768px) {
-  .dialog {
+  .dialog.dialog {
     align-self: flex-end;
     width: 100%;
     max-width: none;
