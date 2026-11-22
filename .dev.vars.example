@@ -1,0 +1,4 @@
+# Copy to .dev.vars for local development only; never commit credentials.
+DEV_AUTH=true
+APP_PASSWORD=change-this-local-password
+UPSTREAM_API_KEY=replace-with-your-api-key
