@@ -1,18 +1,20 @@
-# chat-demo
+# chat-demo-personal
+
+本独立仓库基于 [DeepSeek chat-demo](https://github.com/deepseek-ai/chat-demo)，新增 **Cloudflare 个人云端模式**：单密码登录、云端会话与附件、多端同步和中转接口适配。界面沿用原项目，无多用户管理与 MCP。部署、密钥设置和支持范围见 [个人版 Cloudflare 部署](DEPLOY.cloudflare.zh-CN.md)。以下原有说明适用于默认纯前端模式。
 
 [English](README.md) | 简体中文
 
 基于 DeepSeek API 的静态聊天示例。无需应用后端，浏览器直接请求配置的 API 服务。
 
-点击 [在线体验](https://deepseek-ai.github.io/chat-demo/) 即可使用，也可以前往 [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases) 下载压缩包，解压后双击 `index.html` 在本地使用，无需安装或构建。首次使用时，请在设置中填写 API Key。
+点击 [上游项目在线体验](https://deepseek-ai.github.io/chat-demo/) 即可使用，也可以前往 [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases) 下载压缩包，解压后双击 `index.html` 在本地使用，无需安装或构建。首次使用时，请在设置中填写 API Key。
 
 ## 运行
 
 准备 Node.js 22.12+ 和 pnpm：
 
 ```sh
-git clone https://github.com/deepseek-ai/chat-demo.git
-cd chat-demo
+git clone https://github.com/xilele777/chat-demo-personal.git
+cd chat-demo-personal
 pnpm install
 pnpm dev
 ```

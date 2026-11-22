@@ -1,0 +1,147 @@
+# 个人版 Cloudflare 部署
+
+此版本供一个人跨设备使用：一个访问密码登录，Workers 代理模型请求，D1 保存完整消息树，R2 保存附件。无需 Cloudflare Access、邮箱策略或 AUD，没有注册、多用户管理或 MCP。原始纯前端模式仍可用。
+
+## 已实现与边界
+
+- 会话、标题、消息分支、生成结果与附件原件跨设备同步。
+- 回答开始和结束、编辑、删除时保存；返回页面及窗口聚焦时拉取，页面可见时每 15 秒检查。生成中的文字由发起设备展示，其他设备看到已保存快照，不支持跨设备停止生成。
+- 两台设备修改同一旧版本时返回冲突。本机未同步快照保存在 IndexedDB；可以重试，或者“保留副本并同步”，将本机修改另存为云端新会话。
+- 通过 Cloudflare Secret 设置至少 12 字符的 `APP_PASSWORD`，各设备首次输入密码后保持登录 30 天；修改密码使现有登录失效。密码只在登录时提交，登录态使用 HttpOnly Cookie，不保存在 localStorage。
+- 网络恢复前不要清除浏览器站点数据。此版本启动仍需要联网验证登录状态和读取云端列表；不提供完整离线启动。
+- 草稿、主题、语言和其他界面偏好仍属于各设备；上游密钥只保存在 Worker Secret。
+- 一个会话的 JSON 上限为 1.5 MB；超过时会提示保存失败，需要导出后开启新会话。批量历史导入会在浏览器及 Worker 中读取完整会话数组，不适合超大归档。
+- 删除会话不会立刻删除 R2 中的附件对象或上游已上传文件，避免影响其他分支/会话和未完成同步。R2 清理需在备份后自行执行，当前没有自动垃圾回收。
+- ZIP 导入会替换**全部云端历史**；ZIP 导出沿用原有格式，只附带图片原件，非图片附件只有元数据。云端日常同步则包含所有已保存附件原件。
+
+## 1. 安装与本地运行
+
+需要 Node.js 22.12+（建议 24）和 pnpm。
+
+```powershell
+pnpm install
+Copy-Item .dev.vars.example .dev.vars
+```
+
+编辑 `.dev.vars`，设置本地 `APP_PASSWORD`，需要实际聊天时再填写 `UPSTREAM_API_KEY`；编辑 `wrangler.jsonc` 中上游协议、地址和模型。
+
+```powershell
+pnpm db:local
+pnpm dev:cloud
+```
+
+打开 `http://127.0.0.1:8787`，输入 `.dev.vars` 中设置的密码。`DEV_AUTH=true` 仅控制本地调试错误和本地 HTTP 上游，不绕过密码验证；不要用于生产环境。开发模式用本地 D1/R2，不会写生产数据。
+
+原纯前端模式使用 `pnpm dev`；`pnpm build` 构建纯前端版本，`pnpm build:cloud` 构建请求同源 `/api` 的云端版本。
+
+## 2. 选择上游协议
+
+编辑 `wrangler.jsonc` 的 `vars`。`UPSTREAM_BASE_URL` 填接口基础地址，不包含最终的 `/chat/completions` 或 `/messages`。
+
+| 协议        | Base URL 示例              | 实际请求                 | 支持范围                                         |
+| ----------- | -------------------------- | ------------------------ | ------------------------------------------------ |
+| `openai`    | `https://relay.example/v1` | `/v1/chat/completions`   | 标准流式文字，图片，文本/代码附件                |
+| `anthropic` | `https://relay.example/v1` | `/v1/messages`           | 标准流式 Messages，图片，文本/代码附件           |
+| `deepseek`  | `https://api.deepseek.com` | `/anthropic/v1/messages` | 原项目的 DeepSeek 扩展功能；上游必须支持相应接口 |
+
+例如 OpenAI 兼容中转：
+
+```json
+{
+  "UPSTREAM_PROTOCOL": "openai",
+  "UPSTREAM_BASE_URL": "https://relay.example/v1",
+  "UPSTREAM_MODEL": "your-model-id",
+  "MAX_OUTPUT_TOKENS": "8192"
+}
+```
+
+实际模型 ID 必须以中转站文档为准。默认值 `https://api.deepseek.com/v1` + `deepseek-chat` 是待自行配置的示例，并不保证某家中转站兼容。
+
+标准模式不会发送 DeepSeek 专用工具、标题和安全扩展；会将 `latest_reminder` 转为系统信息，并用首条提问作为会话标题。收到 OpenAI `reasoning_content` 时可展示，但不提供统一推理开关，因为各服务参数不同。搜索和语音入口按能力禁用/隐藏。
+
+标准模式附件支持 PNG、JPEG、GIF、WebP，文本/代码附件上限 2 MiB；PDF、Office、电子书没有接入独立解析服务，不能当纯文本发送。图片仍受服务商的模型能力和大小限制。DeepSeek 扩展模式沿用原项目的文件和语音接口。
+
+切换服务商或协议后，历史服务端文件 ID 不保证通用。需要使用附件时应重新添加文件；会话正文和本地/云端附件原件仍保留。
+
+## 3. 创建 Cloudflare 资源
+
+登录账号：
+
+```powershell
+pnpm exec wrangler login
+pnpm exec wrangler whoami
+```
+
+创建数据库和附件桶：
+
+```powershell
+pnpm exec wrangler d1 create personal-chat
+pnpm exec wrangler r2 bucket create personal-chat-files
+```
+
+将数据库返回的 `database_id` 填入 `wrangler.jsonc`，替换全零占位 ID。如果资源名称被占用，可以换名字并同时修改绑定配置及 package.json 中的数据库命令。
+
+```powershell
+pnpm db:remote
+```
+
+如账号尚未启用 R2，需先在 Cloudflare 控制台启用；请求、数据库和存储按 Cloudflare 账号套餐及实际用量计费。
+
+## 4. 设置一个访问密码并上线
+
+不需要开通 Zero Trust 或配置 Access。只需：
+
+1. 在 Cloudflare 控制台打开 **Workers & Pages → personal-chat → Settings → Variables and Secrets**。
+2. 添加类型为 **Secret** 的变量 `APP_PASSWORD`，值填你自己的访问密码（至少 12 字符）。
+3. 保存并部署。打开 Worker 地址，在登录页输入这个密码即可。
+
+也可以在本机终端安全输入：
+
+```powershell
+pnpm exec wrangler secret put APP_PASSWORD
+pnpm deploy:cloud
+```
+
+密码不要发到聊天或写进代码。手机和电脑使用同一个密码，分别保持登录 30 天。在“设置 → 数据管理”中可以退出；修改 `APP_PASSWORD` 会使所有设备的旧登录失效。登录失败限制为同一 IP 15 分钟内最多 10 次；退出不会删除未同步副本。
+
+当前入口：`https://personal-chat.2519175810.workers.dev`。如果之前已经手动创建了 Access 应用，需要移除这个站点的 Access 保护，否则仍会先看到邮箱登录。
+
+## 5. 模型密钥可以后补
+
+先设置访问密码，就可以进入网页、管理和同步历史。准备好中转站时再在同一个界面添加 **Secret**：`UPSTREAM_API_KEY`，并修改 `UPSTREAM_PROTOCOL`、`UPSTREAM_BASE_URL` 和 `UPSTREAM_MODEL`。
+
+终端设置模型密钥：
+
+```powershell
+pnpm exec wrangler secret put UPSTREAM_API_KEY
+```
+
+同一域名的前端和 API 一起部署。控制台修改普通变量后，请同步修改本地 `wrangler.jsonc` 的同名变量，避免下次本地部署覆盖配置。Secret 不写进这个文件，后续部署会保留已设置的 Secret。
+
+## 6. 从原项目迁移历史
+
+- **同一 origin 的旧 IndexedDB**：打开“设置 → 数据管理 → 上传本机历史”，作为新会话副本上传；重复点击会再产生一份副本。
+- **来自 GitHub Pages、localhost 或另一域名**：先在旧页面导出 ZIP，再到新站导入。导入会覆盖现有云端历史，先下载备份。
+- 原 ZIP 不含非图片附件原件；这些附件需要重新添加。不要将云端副本误认为旧站点数据已经自动迁移。
+
+## 验证
+
+```powershell
+pnpm type
+pnpm type:worker
+pnpm lint
+pnpm build:cloud
+pnpm test:cloud
+```
+
+`test:cloud` 只执行关键集成路径：真实本地 D1/R2 上的版本冲突、原子历史替换和删除、附件字节往返、模拟 OpenAI 流式转换，以及基本访问边界。它使用临时数据库和模拟 API，不调用收费模型、不接触线上数据。默认使用本机 8788 和 9899 端口。
+
+人工浏览器验证包括密码登录、刷新后保持登录、退出、桌面与手机布局；此前还验证了聊天和独立浏览器会话读取同一云端记录。真实中转站需要在选定服务后再验证。
+
+官方参考：
+
+- Cloudflare Workers Static Assets：<https://developers.cloudflare.com/workers/static-assets/>
+- Wrangler 配置：<https://developers.cloudflare.com/workers/wrangler/configuration/>
+- D1：<https://developers.cloudflare.com/d1/>
+- R2：<https://developers.cloudflare.com/r2/>
+- Worker Secrets：<https://developers.cloudflare.com/workers/configuration/secrets/>

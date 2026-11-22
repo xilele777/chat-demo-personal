@@ -1,18 +1,20 @@
-# chat-demo
+# chat-demo-personal
+
+This independent repository is based on [DeepSeek chat-demo](https://github.com/deepseek-ai/chat-demo) and adds a personal Cloudflare mode with a single access password, D1 chat sync, R2 attachments, and configurable OpenAI/Anthropic/DeepSeek upstream adapters. The original UI and static mode are preserved. See the [Cloudflare deployment guide (Chinese)](DEPLOY.cloudflare.zh-CN.md) for setup and limitations. The original documentation below describes static mode.
 
 English | [简体中文](README.zh-CN.md)
 
 A static chat demo powered by the DeepSeek API. No application backend is required: the browser connects directly to the configured API service.
 
-You can [try the app online](https://deepseek-ai.github.io/chat-demo/) or download the archive from [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases), extract it, and double-click `index.html` to use it locally without installation or a build. Enter your API key in Settings before your first chat.
+You can [try the upstream app online](https://deepseek-ai.github.io/chat-demo/) or download the archive from [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases), extract it, and double-click `index.html` to use it locally without installation or a build. Enter your API key in Settings before your first chat.
 
 ## Getting started
 
 Install Node.js 22.12+ and pnpm, then run:
 
 ```sh
-git clone https://github.com/deepseek-ai/chat-demo.git
-cd chat-demo
+git clone https://github.com/xilele777/chat-demo-personal.git
+cd chat-demo-personal
 pnpm install
 pnpm dev
 ```
