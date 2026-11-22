@@ -108,6 +108,8 @@ export type AssistantMessage = MessageBranch & {
 export type Message = UserMessage | AssistantMessage
 
 export type Session = {
+  /** Cloud compare-and-swap token, kept with the snapshot loaded on this device. */
+  cloud?: { revision: string | null; generation: string }
   id: string
   title: string
   createdAt: number

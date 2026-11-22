@@ -2,7 +2,9 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { toSessionSummary, type Session, type SessionSummary } from './types.js'
 
 /** IndexedDB 存储结构版本；新增或调整存储、索引时递增。 */
-const DB_VERSION = 11
+const DB_VERSION = 12
+
+export type PendingCloudSession = { id: string; session: Session }
 
 /** 文件原件按附件的本地 id 存储，所有引用同一 id 的消息共用一份；用于缩略图、打开查看，以及没有 serverId 时补传。 */
 export type StoredFile = {
@@ -14,6 +16,7 @@ export type StoredFile = {
 type StoredSessionSummary = SessionSummary & { fileIds: string[] }
 
 interface ChatDB extends DBSchema {
+  cloudOutbox: { key: string; value: PendingCloudSession }
   /** 当前使用的会话，界面读写都在这里 */
   sessions: { key: string; value: Session }
   sessionSummaries: {
@@ -57,7 +60,13 @@ const getDB = () =>
   (dbPromise ??= openDB<ChatDB>('chat-demo', DB_VERSION, {
     upgrade(db, _oldVersion, _newVersion, tx) {
       // 初始化当前格式需要的存储与索引，不迁移旧消息。
-      for (const name of ['sessions', 'files', 'sessionsStaging', 'filesStaging'] as const) {
+      for (const name of [
+        'sessions',
+        'files',
+        'sessionsStaging',
+        'filesStaging',
+        'cloudOutbox',
+      ] as const) {
         if (!db.objectStoreNames.contains(name)) {
           db.createObjectStore(name, { keyPath: 'id' })
         }
@@ -80,6 +89,19 @@ export const loadSessionSummaries = async (): Promise<SessionSummary[]> =>
 
 export const loadSession = async (id: string): Promise<Session | undefined> =>
   (await getDB()).get('sessions', id)
+
+export const loadOutbox = async (): Promise<PendingCloudSession[]> =>
+  (await getDB()).getAll('cloudOutbox')
+export const putOutbox = async (session: Session): Promise<void> => {
+  await (await getDB()).put('cloudOutbox', { id: session.id, session })
+}
+export const removeOutbox = async (id: string): Promise<void> => {
+  await (await getDB()).delete('cloudOutbox', id)
+}
+export const loadStagingSessions = async (): Promise<Session[]> =>
+  (await getDB()).getAll('sessionsStaging')
+export const loadStagingFiles = async (): Promise<StoredFile[]> =>
+  (await getDB()).getAll('filesStaging')
 
 export const saveSession = async (session: Session, files: StoredFile[] = []): Promise<void> => {
   const summary = storedSummary(session)
