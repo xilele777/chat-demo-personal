@@ -8,6 +8,11 @@
   "scripts": {
     "dev": "rspack serve -c rspack.config.ts",
     "build": "node scripts/build.mjs",
+    "build:cloud": "node scripts/build.mjs --cloud",
+    "dev:cloud": "pnpm build:cloud && wrangler dev --ip 127.0.0.1",
+    "deploy:cloud": "pnpm build:cloud && wrangler deploy",
+    "db:local": "wrangler d1 migrations apply personal-chat --local",
+    "db:remote": "wrangler d1 migrations apply personal-chat --remote",
     "type:worker": "tsc -p tsconfig.worker.json",
     "type": "tsc -p tsconfig.json",
     "lint": "oxlint src worker rspack.config.ts",

@@ -5,6 +5,7 @@ import { defineConfig } from '@rspack/cli'
 import { rspack, type Configuration } from '@rspack/core'
 
 const dev = process.env.NODE_ENV !== 'production'
+const cloud = process.env.CHAT_CLOUD === 'true'
 const targets = ['chrome >= 105', 'edge >= 105', 'safari >= 16', 'firefox >= 110']
 const root = path.dirname(fileURLToPath(import.meta.url))
 const { version } = JSON.parse(
@@ -25,7 +26,7 @@ type ConfigOptions = {
 
 /** 创建构建配置，支持自定义 API 地址和开发服务器选项 */
 export const createConfig = ({
-  apiOrigin = 'https://api.deepseek.com',
+  apiOrigin = cloud ? '/api' : 'https://api.deepseek.com',
   devServer,
 }: ConfigOptions = {}): Configuration => ({
   mode: dev ? 'development' : 'production',
@@ -80,7 +81,10 @@ export const createConfig = ({
       scriptLoading: 'defer',
       meta: { 'application-version': version },
     }),
-    new rspack.DefinePlugin({ __API_ORIGIN__: JSON.stringify(apiOrigin) }),
+    new rspack.DefinePlugin({
+      __API_ORIGIN__: JSON.stringify(apiOrigin),
+      __CLOUD_MODE__: JSON.stringify(cloud),
+    }),
     new rspack.CopyRspackPlugin({
       patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],
     }),
