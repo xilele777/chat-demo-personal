@@ -1,4 +1,6 @@
 import clsx from 'clsx'
+import { cloudMode, useCloud } from '../../services/cloud.js'
+import { CloudSettings } from './CloudSettings.js'
 import { useRef, useState, type ReactNode } from 'react'
 import {
   IconDarkOutline16,
@@ -57,6 +59,7 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
 const SettingsContent = () => {
   const t = useTranslate()
   const isMobile = useIsMobile()
+  const speechEnabled = useCloud((s) => !cloudMode || s.config?.speech)
   // 打开时按调用方指定的分组选中，之后在弹窗内切换
   const [section, setSection] = useState(() => useSettingsDialog.getState().section)
   // 切换分组不丢失正在输入的 API Key 与导入状态
@@ -98,12 +101,12 @@ const SettingsContent = () => {
             <>
               <ThemeSetting />
               <LocaleSetting />
-              <TtsVoiceSetting />
+              {speechEnabled ? <TtsVoiceSetting /> : null}
               <LocationSetting />
             </>
           ) : (
             <>
-              <ApiKeyField editor={apiKeyEditor} />
+              {cloudMode ? <CloudSettings /> : <ApiKeyField editor={apiKeyEditor} />}
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
               <SettingCell
@@ -121,7 +124,7 @@ const SettingsContent = () => {
                   </Button>
                 }
               />
-              {isMobile ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
+              {isMobile && !cloudMode ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
             </>
           )}
         </div>
@@ -164,7 +167,7 @@ const DeleteAllConfirm = ({
         </div>
       }
     >
-      {t('deleteAllSessionsModalDescription')}
+      {t(cloudMode ? 'cloudDeleteDescription' : 'deleteAllSessionsModalDescription')}
     </Modal>
   )
 }
@@ -337,7 +340,9 @@ const ImportConfirm = ({
         </>
       }
     >
-      <div className={styles.importConfirmText}>{t('historyImportConfirmDescription')}</div>
+      <div className={styles.importConfirmText}>
+        {t(cloudMode ? 'cloudImportDescription' : 'historyImportConfirmDescription')}
+      </div>
     </Modal>
   )
 }
@@ -479,7 +484,7 @@ const ImportHistory = ({
   return (
     <SettingCell
       label={t('historyImport')}
-      description={t('historyImportDescription')}
+      description={t(cloudMode ? 'cloudImportDescription' : 'historyImportDescription')}
       status={historyImport.status}
       action={
         <>
