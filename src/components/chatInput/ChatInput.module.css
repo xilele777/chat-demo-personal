@@ -176,6 +176,7 @@
 .textareaWrapper {
   position: relative;
   width: 100%;
+  margin-top: 4px;
 }
 
 .textarea,
@@ -221,6 +222,11 @@
   .mirror {
     min-height: calc(var(--line-height) * 1.25 + var(--input-padding-top));
   }
+  /* The reference's two-row welcome textarea remains 60px even on narrow phones. */
+  .home .textarea,
+  .home .mirror {
+    min-height: 60px;
+  }
 }
 
 .mirror {
@@ -249,7 +255,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 4px;
+  min-height: 58px;
+  box-sizing: border-box;
   padding: 12px;
 }
 

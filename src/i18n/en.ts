@@ -12,14 +12,9 @@ export const en = {
   tokenUncached: 'Uncached input',
   tokenVisibleOutput: 'Text and other output',
   tokenReplies: 'Reported answers',
-  tokenMissingReplies: '{count} answers did not report usage',
   tokenDetails: 'View usage details',
   tokenComposition: 'Token breakdown',
-  tokenCacheHelp:
-    'Cache hit rate = cache reads / total input. Cache is part of input; reasoning is part of output. Neither is counted twice.',
   tokenNotReported: 'Not reported',
-  reasoningNotReturned:
-    'The provider did not expose reasoning text. Reasoning effort controls inference but does not guarantee a visible reasoning transcript.',
   remove: 'Remove',
   draftSaved: 'Text draft saved on this device',
   draftSaveFailed: 'Draft could not be saved. Copy your text before refreshing.',
@@ -65,8 +60,6 @@ export const en = {
   tokenTotal: 'Total',
   tokenUnavailable: 'Provider did not return token usage',
   tokenSession: 'Conversation total',
-  tokenSessionHelp:
-    'Includes reported usage for all answer versions and continuations. Requests without usage and automatic title generation are excluded.',
   mcpSection: 'MCP',
   mcpAuthType: 'Authentication',
   mcpAuthBearer: 'Bearer token / No authentication',
@@ -161,7 +154,6 @@ export const en = {
   cloudImportDescription:
     'Importing a ZIP replaces all cloud chats and syncs the replacement to other devices.',
   welcomeMessageChat250808: 'How can I help you?',
-  contentCaveat: 'AI-generated, for reference only',
   expandSiderbarButton: 'Open sidebar',
   collapseSiderbarButton: 'Close sidebar',
   newChat: 'New chat',

@@ -63,9 +63,6 @@ export const SessionTokenUsage = ({ session }: { session: Session }) => {
       <dd>{value}</dd>
     </div>
   )
-  const missing = answers.filter(
-    (message) => !message.usage && message.status !== 'pending' && message.status !== 'streaming'
-  ).length
   return (
     <details ref={ref} className={styles.usage} data-session-usage>
       <summary className={styles.summary} title={t('tokenDetails')}>
@@ -130,11 +127,6 @@ export const SessionTokenUsage = ({ session }: { session: Session }) => {
             style={{ width: `${total ? (output / total) * 100 : 0}%` }}
           />
         </div>
-        <p>{t('tokenCacheHelp')}</p>
-        <p>
-          {t('tokenSessionHelp')}
-          {missing > 0 ? ` ${t('tokenMissingReplies', { count: missing })}` : ''}
-        </p>
       </section>
     </details>
   )

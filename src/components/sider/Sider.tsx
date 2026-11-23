@@ -166,7 +166,7 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
             <div key={group.key} className={styles.section}>
               <div className={styles.sectionHeader}>
                 <span>{group.label}</span>
-                {index === 0 ? (
+                {index === 0 && multi ? (
                   <button
                     type="button"
                     className={styles.batchEntry}

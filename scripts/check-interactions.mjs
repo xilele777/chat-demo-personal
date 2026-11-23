@@ -61,6 +61,14 @@ try {
   }
   await page.reload()
   const row = (id) => page.locator(`[data-session-item="${id}"]`)
+  const enterMulti = async () => {
+    await row(ids[2]).hover()
+    await row(ids[2])
+      .getByRole('button', { name: `更多 · ${ids[2]}`, exact: true })
+      .click()
+    await page.getByRole('button', { name: '多选对话', exact: true }).click()
+    await page.getByRole('checkbox', { name: ids[2], exact: true }).click()
+  }
   await row(ids[0]).getByRole('button', { name: ids[0], exact: true }).click()
   await expect(page.locator('.ds-think-content')).toContainText('思考显示验收')
   await page.getByRole('button', { name: '返回新对话', exact: true }).click()
@@ -80,11 +88,13 @@ try {
         gap: box.top - title.bottom,
         inset: box.left - container.left,
         titleSize: getComputedStyle(group).fontSize,
+        composerHeight: box.height,
         bottom: box.bottom,
         overflow: document.documentElement.scrollWidth > innerWidth,
       }
     })
     expect(dimensions.gap).toBe(27)
+    expect(dimensions.composerHeight).toBe(124)
     expect(dimensions.inset).toBe(32)
     expect(dimensions.titleSize).toBe(width < 440 ? '20px' : '24px')
     expect(dimensions.bottom).toBeLessThan(780)
@@ -94,20 +104,20 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.screenshot({ path: path.join(output, 'welcome-mobile.png') })
   await page.getByRole('button', { name: '打开边栏', exact: true }).click()
-  await page.getByRole('button', { name: '多选对话', exact: true }).click()
+  await enterMulti()
   await page.getByRole('checkbox', { name: ids[2], exact: true }).click()
   await page.getByRole('button', { name: '收起边栏', exact: true }).click()
   await page.getByRole('button', { name: '返回新对话', exact: true }).click()
   await page.getByRole('button', { name: '打开边栏', exact: true }).click()
   await expect(page.getByRole('checkbox')).toHaveCount(0)
-  await page.getByRole('button', { name: '多选对话', exact: true }).click()
+  await enterMulti()
   await page.getByRole('checkbox', { name: ids[0], exact: true }).click()
   await expect(page.getByRole('checkbox', { name: ids[0], exact: true })).toBeChecked()
   await page.getByRole('button', { name: '退出多选', exact: true }).click()
   await page.getByRole('button', { name: '返回新对话', exact: true }).click()
   await expect(page.getByRole('heading')).toBeVisible()
   await page.setViewportSize({ width: 1366, height: 900 })
-  await page.getByRole('button', { name: '多选对话', exact: true }).click()
+  await enterMulti()
   await page.getByRole('button', { name: '全选对话', exact: true }).click()
   expect(await page.getByRole('checkbox', { checked: true }).count()).toBeGreaterThanOrEqual(3)
   await page.getByRole('button', { name: '取消全选', exact: true }).click()

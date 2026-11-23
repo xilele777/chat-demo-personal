@@ -87,13 +87,6 @@ export const AssistantMessage = memo(function AssistantMessage({
           ))}
         </div>
       ) : null}
-      {!streaming &&
-      !refused &&
-      answer &&
-      (message.thinking || (message.usage?.reasoning_tokens ?? 0) > 0) &&
-      !message.blocks.some((block) => block.type === 'thinking' && block.thinking.trim()) ? (
-        <p className={styles.reasoningNotice}>{t('reasoningNotReturned')}</p>
-      ) : null}
       {notice?.presentation === 'response' ? (
         <Markdown
           className="ds-assistant-message-main-content"

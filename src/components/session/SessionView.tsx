@@ -27,7 +27,6 @@ export const SessionView = ({ session, streaming }: { session: Session; streamin
               <SessionTokenUsage session={session} />
               <SaveStatus sessionId={session.id} />
             </div>
-            <div className={styles.caveat}>{t('contentCaveat')}</div>
           </div>
         }
       />

@@ -5,6 +5,13 @@
   flex-direction: column;
 }
 
+/* Center against the full viewport, like the reference welcome screen. */
+.container > :first-child {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+}
+
 .welcome {
   display: flex;
   flex-direction: column;
@@ -54,6 +61,12 @@
     svg {
       transform: scale(0.88);
     }
+  }
+}
+
+@media (max-width: 767px) {
+  .greeting h1 {
+    font-size: 22px;
   }
 }
 
