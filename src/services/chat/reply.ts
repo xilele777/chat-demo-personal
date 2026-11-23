@@ -305,6 +305,15 @@ const toAssistantParam = (
             sources.set(citation.url, { title: citation.title ?? citation.url, excerpt: '' })
           }
         }
+      } else if (
+        block.type === 'web_fetch_tool_result' &&
+        block.content.type === 'web_fetch_result'
+      ) {
+        const page = block.content
+        sources.set(page.url, {
+          title: page.content.title ?? page.url,
+          excerpt: page.content.source.data.slice(0, 1000),
+        })
       }
     }
     for (const block of content) {
