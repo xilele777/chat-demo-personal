@@ -24,32 +24,73 @@ const converted = messages.map((message) => ({
 const limited = limitContext('system', converted, { MAX_INPUT_TOKENS: '4096' })
 assert.equal(limited.at(-1).content, '本轮问题')
 assert.equal(limited[0].role, 'user')
-assert.ok(limited.length < 10)
+assert.ok(limited.length < converted.length)
+assert.ok(
+  contextCost('system') +
+    limited.reduce(
+      (sum, message) =>
+        sum +
+        16 +
+        contextCost(message.content) +
+        contextCost(JSON.stringify(message.tool_calls ?? '')),
+      0
+    ) <=
+    4096
+)
 for (let index = 0; index < limited.length - 1; index += 2) {
   assert.equal(limited[index].role, 'user')
   assert.equal(limited[index + 1].role, 'assistant')
 }
-assert.equal(contextCost('中文'), 6)
+assert.equal(contextCost('中文'), 4)
+assert.equal(contextCost('hello world!'), 4)
 assert.equal(contextCost([{ type: 'image_url' }]), 4096)
 assert.throws(
   () =>
-    limitContext('system', [{ role: 'user', content: 'X'.repeat(5000) }], {
+    limitContext('system', [{ role: 'user', content: 'X'.repeat(15000) }], {
       MAX_INPUT_TOKENS: '4096',
     }),
-  /exceed the input budget/
+  /本轮问题和附件超过输入预算/
 )
 assert.throws(
   () =>
     limitContext(
       'system',
       [
-        { role: 'user', content: 'X'.repeat(5000) },
+        { role: 'user', content: 'X'.repeat(15000) },
         { role: 'assistant', content: 'partial' },
         { role: 'user', content: CONTINUE_PROMPT },
       ],
       { MAX_INPUT_TOKENS: '4096' }
     ),
-  /exceed the input budget/
+  /本轮问题和附件超过输入预算/
+)
+// MCP definitions are fixed overhead in every conversation; a new chat does not remove them.
+const tools = JSON.stringify({
+  tools: Array.from({ length: 60 }, (_, i) => ({
+    name: `tool_${i}`,
+    description: 'Description '.repeat(100),
+  })),
+})
+assert.equal(limitContext(tools, [{ role: 'user', content: '你好' }], {}).length, 1)
+assert.throws(
+  () =>
+    limitContext('schema'.repeat(3000), [{ role: 'user', content: '你好' }], {
+      MAX_INPUT_TOKENS: '4096',
+    }),
+  /MCP 工具定义超过输入预算/
+)
+assert.throws(
+  () =>
+    limitContext(
+      '',
+      [
+        { role: 'user', content: '你好' },
+        { role: 'assistant', content: '', tool_calls: [] },
+        { role: 'tool', content: 'data'.repeat(4000) },
+      ],
+      { MAX_INPUT_TOKENS: '4096' }
+    ),
+  /本轮工具结果超过输入预算/
 )
 const searched = {
   ...reply('searched', '答案 [citation:1]'),
@@ -102,5 +143,5 @@ assert.equal(
   1
 )
 console.log(
-  'PASS: bounded complete context rounds, current question and continuation preservation, UTF-8/image budgets, retained historical sources, citation isolation and failed-round filtering'
+  'PASS: bounded complete context rounds, current question and continuation preservation, token/image estimates, MCP overhead diagnostics, retained historical sources, citation isolation and failed-round filtering'
 )
