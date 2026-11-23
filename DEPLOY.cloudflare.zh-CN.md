@@ -74,7 +74,7 @@ OpenAI 推理模型在等待返回时显示“正在思考”；兼容 `reasonin
 
 模型会按需调用已启用工具。服务声明 `readOnlyHint: true` 的工具可直接调用，请只启用信任的服务；其他工具会在对话中显示名称和参数，选择“允许这次调用”后执行。“拒绝”、停止生成或确认过期后不会执行该次待确认调用。工具调用数量、连接超时与输出长度均有限制。当前支持 OpenAI / Anthropic 兼容协议，以及 Bearer Token / OAuth 登录；暂不支持 DeepSeek 扩展协议的 MCP、本机 stdio 或旧版 SSE。Notion OAuth 连接方式见第 7 节。
 
-已有部署升级时，先执行 `pnpm db:remote`，应用包含 `0003_mcp.sql` 的数据库迁移，再执行 `pnpm deploy:cloud`。本地运行则使用 `pnpm db:local`。新增表只保存 MCP 配置和临时确认记录，不替换历史数据。
+`pnpm deploy:cloud` 会先构建，再应用远程数据库迁移，最后发布 Worker；迁移失败时停止发布。已有部署升级会自动应用包含 `0003_mcp.sql` 的待执行迁移，也可用 `pnpm db:remote` 单独迁移。本地运行使用 `pnpm db:local`。新增表只保存 MCP 配置和临时确认记录，不替换历史数据。
 
 `MAX_INPUT_TOKENS` 默认 `24000`，独立于 `MAX_OUTPUT_TOKENS`。标准模式使用 UTF-8 字节作为保守的文本 token 上界，每张图片预留 4096 token；按完整轮次裁剪旧上下文，保留本轮问题和工具往返。它是预算估算，并非模型的精确 tokenizer 或图片用量计数。会话完整历史仍保存；本轮内容本身超过预算时会提示缩短问题或移除附件。历史搜索来源的 URL、标题和受限摘要供后续追问使用，历史引用编号与本轮引用隔离。
 
@@ -170,7 +170,7 @@ pnpm exec wrangler secret put UPSTREAM_API_KEY
 
 ## 7. 连接 Notion 等 OAuth MCP 服务
 
-更新已有部署时，先执行 `pnpm db:remote` 应用 `0004_mcp_oauth.sql`，再执行 `pnpm deploy:cloud`。本地开发使用 `pnpm db:local`。OAuth 注册信息、访问令牌和刷新令牌保存在 D1，不回传浏览器，也不写入本机设置。
+更新已有部署时执行 `pnpm deploy:cloud`，命令会在发布前自动应用 `0004_mcp_oauth.sql` 等待执行迁移。缺少这次迁移时，OAuth 授权无法启动。本地开发使用 `pnpm db:local`。OAuth 注册信息、访问令牌和刷新令牌保存在 D1，不回传浏览器，也不写入本机设置。
 
 在“设置 → MCP → 添加 MCP 连接”填写名称与 `https://mcp.notion.com/mcp`，选择“OAuth 浏览器登录”，点击“登录授权”。浏览器会前往 Notion；完成授权后返回本站，自动保存连接并发现工具。回调地址为本站 origin 加 `/mcp/oauth/callback`，必须使用稳定的公网 HTTPS 域名；更换域名后需要重新授权。回调使用当前浏览器的访问密码会话，请在原浏览器中完成授权。
 

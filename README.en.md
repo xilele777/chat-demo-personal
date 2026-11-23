@@ -100,7 +100,7 @@ Deleting cloud conversations does not immediately remove R2 attachments or files
 | `pnpm lint`                       | Lint code                                                                     |
 | `pnpm test:context`               | Check context budgets and retained historical sources                         |
 | `pnpm test:cloud`                 | Run integration checks with local D1/R2 and mock APIs; build cloud mode first |
-| `pnpm deploy:cloud`               | Build and deploy to the configured Cloudflare account                         |
+| `pnpm deploy:cloud`               | Build, apply remote database migrations, and deploy to Cloudflare              |
 
 The frontend uses React and TypeScript. The cloud backend uses Cloudflare Workers, D1, and R2. UI and conversation logic live in `src/`, cloud adapters and storage in `worker/`, and database migrations in `migrations/`.
 
