@@ -18,7 +18,40 @@ let cookie = ''
 let sentToProvider
 let worker
 let logs = ''
+let searchCount = 0
+let searchedQuery = ''
 const mock = createServer(async (req, res) => {
+  if (req.url === '/search') {
+    let text = ''
+    for await (const chunk of req) text += chunk
+    const body = JSON.parse(text)
+    assert.equal(req.headers.authorization, 'Bearer smoke-search')
+    searchCount++
+    searchedQuery = body.query
+    if (body.query === 'search-failure') {
+      res
+        .writeHead(429, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ error: 'smoke-search must never leak' }))
+    } else {
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(
+        JSON.stringify({
+          results:
+            body.query === 'no-results'
+              ? []
+              : [
+                  {
+                    title: '测试来源',
+                    url: 'https://example.com/news',
+                    content: '今天发布的测试消息',
+                  },
+                  { title: '重复来源', url: 'https://example.com/news', content: '重复摘要' },
+                  { title: '无效来源', url: 'javascript:alert(1)', content: '不可点击' },
+                ],
+        })
+      )
+    }
+    return
+  }
   if (req.url !== '/v1/chat/completions') {
     res.writeHead(404).end()
     return
@@ -31,7 +64,11 @@ const mock = createServer(async (req, res) => {
   for (const delta of [
     { reasoning_content: '先检查内容。' },
     { content: '你好，' },
-    { content: '云端同步正常。' },
+    {
+      content:
+        '云端同步正常。' +
+        (sentToProvider.messages[0].content.includes('web search sources') ? '[citation:1]' : ''),
+    },
   ]) {
     res.write(`data: ${JSON.stringify({ choices: [{ delta, finish_reason: null }] })}\n\n`)
   }
@@ -103,6 +140,10 @@ try {
       'UPSTREAM_API_KEY:smoke-test',
       '--var',
       'UPSTREAM_MODEL:test-model',
+      '--var',
+      'TAVILY_API_KEY:smoke-search',
+      '--var',
+      `DEV_SEARCH_URL:http://127.0.0.1:${mockPort}/search`,
       '--var',
       `UPSTREAM_BASE_URL:http://127.0.0.1:${mockPort}/v1`,
     ],
@@ -361,6 +402,68 @@ try {
   assert.match(JSON.stringify(sentToProvider.messages), /附件内容/)
   assert.match(sentToProvider.messages[0].content, /今天/)
   console.log('PASS: R2 originals, text attachments and OpenAI streaming adaptation')
+
+  const { readMessageEvent } = await import('../src/services/api/parseEvent.ts')
+  const { applyEvent } = await import('../src/services/chat/reply.ts')
+  const { buildReplyView } = await import('../src/services/chat/view.ts')
+  const requestSearch = (query) =>
+    call('/anthropic/v1/messages', 'POST', {
+      system: '测试',
+      messages: [{ role: 'user', content: [{ type: 'text', text: query }] }],
+      tools: [{ type: 'deepseek_web_search', name: 'deepseek_web_search' }],
+    })
+  assert.equal((await (await call('/config')).json()).search, true)
+  const searchResponse = await requestSearch('今天的测试消息')
+  assert.equal(searchResponse.status, 200)
+  const searchStream = await searchResponse.text()
+  assert.equal(searchedQuery, '今天的测试消息', searchStream)
+  assert.equal(searchCount, 1)
+  assert.equal(sentToProvider.tools, undefined)
+  assert.match(JSON.stringify(sentToProvider.messages), /今天发布的测试消息/)
+  const events = searchStream
+    .split('\n\n')
+    .filter(Boolean)
+    .map((part) => JSON.parse(part.split('\ndata: ')[1]))
+  assert.equal(events.filter((e) => e.type === 'message_start').length, 1)
+  assert.deepEqual(
+    events.filter((e) => e.type === 'content_block_start').map((e) => e.index),
+    [0, 1, 2, 3]
+  )
+  let reply = {
+    id: 'search-reply',
+    role: 'assistant',
+    createdAt: 1,
+    status: 'pending',
+    prefix: true,
+    thinking: false,
+    search: true,
+    blocks: [],
+  }
+  const indexes = new Map()
+  for (const event of events) {
+    const parsed = readMessageEvent(event)
+    if (parsed) reply = applyEvent(reply, parsed, Date.now(), indexes)
+  }
+  const view = buildReplyView(reply, false)
+  assert.deepEqual(
+    view.steps.map((s) => s.type),
+    ['search', 'thinking']
+  )
+  assert.equal(view.steps[0].status, 'done')
+  assert.deepEqual(view.steps[0].queries, ['今天的测试消息'])
+  assert.equal(view.sources.length, 1)
+  assert.equal(view.sources[0].snippet, '今天发布的测试消息')
+  assert.match(view.answer.markdown, /\[citation:1\]/)
+  const failedSearch = await (await requestSearch('search-failure')).text()
+  assert.match(failedSearch, /web_search_tool_result_error/)
+  assert.match(failedSearch, /HTTP 429/)
+  assert.doesNotMatch(failedSearch, /smoke-search/)
+  const emptySearch = await (await requestSearch('no-results')).text()
+  assert.match(emptySearch, /"content":\[\]/)
+  assert.match(emptySearch, /message_stop/)
+  console.log(
+    'PASS: real search event flow, reasoning, citations, invalid/duplicate URLs, errors and empty results'
+  )
 
   const { openAIStream } = await import('../worker/upstream.ts')
   let upstreamCancelled = false

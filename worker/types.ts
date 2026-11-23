@@ -9,6 +9,9 @@ export interface Env {
   UPSTREAM_MODEL: string
   UPSTREAM_PROTOCOL: Protocol
   MAX_OUTPUT_TOKENS?: string
+  TAVILY_API_KEY?: string
+  /** Optional loopback endpoint for local integration tests only. */
+  DEV_SEARCH_URL?: string
   APP_PASSWORD?: string
   DEV_AUTH?: string
 }

@@ -4,8 +4,8 @@
 
 ## 已实现与边界
 
-- 会话菜单支持“置顶 / 取消置顶”，置顶会话单独显示在列表顶部。状态随会话同步，导入导出也会保留，不修改会话的聊天时间。
 - 会话、标题、消息分支、生成结果与附件原件跨设备同步。
+- 会话菜单支持“置顶 / 取消置顶”，置顶会话单独显示在列表顶部。状态随会话同步，导入导出也会保留，不修改会话的聊天时间。
 - 回答开始和结束、编辑、删除时保存；返回页面及窗口聚焦时拉取，页面可见时每 15 秒检查。生成中的文字由发起设备展示，其他设备看到已保存快照，不支持跨设备停止生成。
 - 两台设备修改同一旧版本时返回冲突。本机未同步快照保存在 IndexedDB；可以重试，或者“保留副本并同步”，将本机修改另存为云端新会话。
 - 通过 Cloudflare Secret 设置至少 12 字符的 `APP_PASSWORD`，各设备首次输入密码后保持登录 30 天；修改密码使现有登录失效。密码只在登录时提交，登录态使用 HttpOnly Cookie，不保存在 localStorage。
@@ -58,7 +58,30 @@ pnpm dev:cloud
 
 实际模型 ID 必须以中转站文档为准。默认值 `https://api.deepseek.com/v1` + `deepseek-chat` 是待自行配置的示例，并不保证某家中转站兼容。
 
-标准模式不会发送 DeepSeek 专用工具、标题和安全扩展；会将 `latest_reminder` 转为系统信息，并用首条提问作为会话标题。收到 OpenAI `reasoning_content` 时可展示，但不提供统一推理开关，因为各服务参数不同。搜索和语音入口按能力禁用/隐藏。
+标准模式不会向模型发送 DeepSeek 专用工具、标题和安全扩展；会将 `latest_reminder` 转为系统信息，并用首条提问作为会话标题。收到 OpenAI `reasoning_content` 或字符串 `reasoning` 时会流式展示思考文字、用时和折叠入口；不提供统一推理开关，因为各服务参数不同。只显示接口实际公开返回的思考内容，模型没有返回时不生成模拟思考。语音入口按能力隐藏。
+
+### 配置联网搜索（继续使用当前中转模型）
+
+OpenAI / Anthropic 兼容模式支持独立的 [Tavily Search API](https://docs.tavily.com/documentation/api-reference/endpoint/search)，不需要修改 `UPSTREAM_PROTOCOL`、模型或中转地址。
+
+1. 在 [Tavily 控制台](https://app.tavily.com/) 创建 API Key。
+2. 在 Cloudflare **Workers & Pages → personal-chat → Settings → Variables and Secrets** 添加 **Secret**，名称为 `TAVILY_API_KEY`，值为该密钥。不要把密钥写进 `wrangler.jsonc`、前端代码或聊天中。
+3. 部署本次版本后刷新网页，开启输入框下方“智能搜索”再发送问题。
+
+也可以在本机终端中交互输入密钥，再发布代码：
+
+```powershell
+pnpm exec wrangler secret put TAVILY_API_KEY
+pnpm deploy:cloud
+```
+
+本地运行时，将 `TAVILY_API_KEY=你的密钥` 放入忽略提交的 `.dev.vars`，然后启动 `pnpm dev:cloud`。
+
+启用搜索后，每次发送会先用本轮问题的文字（最多 400 字符）进行一次 basic 网页搜索，最多保留 5 个去重的 HTTP/HTTPS 来源，再将摘要提供给模型。界面显示真实搜索词、进行中 / 完成 / 失败状态、来源卡片和 `[citation:N]` 引用。历史回复会保存这些过程，跨设备读取时仍可查看；实时过程只在发起设备展示。
+
+搜索失败会显示失败状态与错误，不会把普通回答冒充搜索结果。无结果时继续回答，并要求模型明确说明没有合适来源。Tavily 按自己的额度和套餐计费；不配置该密钥时搜索入口保持禁用。
+
+这条路径是“搜索后回答”，不包含模型多轮自主搜索或逐页浏览。DeepSeek 扩展模式则继续使用上游原生的搜索 / 浏览事件；仅在上游确实支持相应扩展时使用该模式，不能只改协议名称来获得搜索能力。
 
 标准模式附件支持 PNG、JPEG、GIF、WebP，文本/代码附件上限 2 MiB；PDF、Office、电子书没有接入独立解析服务，不能当纯文本发送。图片仍受服务商的模型能力和大小限制。DeepSeek 扩展模式沿用原项目的文件和语音接口。
 

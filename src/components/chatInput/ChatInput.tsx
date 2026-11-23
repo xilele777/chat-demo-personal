@@ -223,7 +223,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
             </button>
           </Tooltip>
           <Tooltip
-            content={t(searchEnabled ? 'deactivatedSearchTooltip' : 'cloudFeatureUnavailable')}
+            content={t(searchEnabled ? 'deactivatedSearchTooltip' : 'searchUnavailableTooltip')}
           >
             <button
               type="button"

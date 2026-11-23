@@ -1,6 +1,7 @@
 import { authentication, authorize } from './auth.js'
 import { storage } from './storage.js'
 import { upstream } from './upstream.js'
+import { searchAvailable } from './search.js'
 import { HttpError, json, type Env } from './types.js'
 
 // Wrangler's module entry point requires a default export.
@@ -32,7 +33,7 @@ export default {
             protocol: env.UPSTREAM_PROTOCOL,
             model: env.UPSTREAM_MODEL,
             configured: Boolean(env.UPSTREAM_API_KEY),
-            search: env.UPSTREAM_PROTOCOL === 'deepseek',
+            search: searchAvailable(env),
             speech: env.UPSTREAM_PROTOCOL === 'deepseek',
             thinking: env.UPSTREAM_PROTOCOL === 'deepseek',
           })

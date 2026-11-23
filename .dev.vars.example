@@ -2,3 +2,5 @@
 DEV_AUTH=true
 APP_PASSWORD=change-this-local-password
 UPSTREAM_API_KEY=replace-with-your-api-key
+# Optional web search for OpenAI/Anthropic-compatible providers.
+# TAVILY_API_KEY=tvly-your-key
