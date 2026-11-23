@@ -362,6 +362,24 @@ try {
   assert.match(sentToProvider.messages[0].content, /今天/)
   console.log('PASS: R2 originals, text attachments and OpenAI streaming adaptation')
 
+  const { openAIStream } = await import('../worker/upstream.ts')
+  let upstreamCancelled = false
+  const raw = new ReadableStream({
+    cancel() {
+      upstreamCancelled = true
+    },
+  })
+  const cancellationStream = openAIStream(
+    new Response(raw, { headers: { 'Content-Type': 'text/event-stream' } }),
+    new AbortController().signal,
+    'test-model'
+  )
+  const cancellationReader = cancellationStream.body.getReader()
+  await cancellationReader.read()
+  await cancellationReader.cancel()
+  assert.equal(upstreamCancelled, true)
+  console.log('PASS: cancelling generation releases the upstream response stream')
+
   assert.equal(
     (await fetch(`${origin}/api/sessions`, { headers: { Origin: 'https://another-site.example' } }))
       .status,

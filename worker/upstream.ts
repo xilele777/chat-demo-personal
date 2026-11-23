@@ -219,13 +219,34 @@ export function openAIStream(response: Response, signal: AbortSignal, model: str
   if (!response.body || !response.headers.get('Content-Type')?.includes('text/event-stream')) {
     throw new HttpError(502, 'The provider did not return an SSE stream')
   }
-  const iterator = normalizeOpenAI(response.body, signal, model)
+  const body = response.body
+  return eventStream(
+    (streamSignal) => normalizeOpenAI(body, streamSignal, model),
+    signal,
+    () => {
+      // A user can cancel before the iterator has started reading the provider body.
+      void body.cancel().catch(() => {})
+    }
+  )
+}
+
+function eventStream(
+  run: (signal: AbortSignal) => AsyncGenerator<Record<string, unknown>>,
+  signal: AbortSignal,
+  onCancel?: () => void
+): Response {
+  const cancellation = new AbortController()
+  const iterator = run(AbortSignal.any([signal, cancellation.signal]))
   const encoder = new TextEncoder()
+  let cancelled = false
   return new Response(
     new ReadableStream({
       async pull(controller) {
         try {
           const next = await iterator.next()
+          if (cancelled) {
+            return
+          }
           if (next.done) {
             controller.close()
           } else {
@@ -234,6 +255,9 @@ export function openAIStream(response: Response, signal: AbortSignal, model: str
             )
           }
         } catch (error) {
+          if (cancelled) {
+            return
+          }
           controller.enqueue(
             encoder.encode(
               `event: error\ndata: ${JSON.stringify({ error: { message: error instanceof Error ? error.message : 'Stream failed' } })}\n\n`
@@ -243,6 +267,9 @@ export function openAIStream(response: Response, signal: AbortSignal, model: str
         }
       },
       async cancel() {
+        cancelled = true
+        cancellation.abort()
+        onCancel?.()
         await iterator.return(undefined)
       },
     }),

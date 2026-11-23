@@ -111,6 +111,9 @@ export async function* readServerSentEvents(
     reader.cancel(signal?.reason).catch(() => {})
   }
   signal?.addEventListener('abort', onAbort, { once: true })
+  if (signal?.aborted) {
+    onAbort()
+  }
   // TextDecoder 默认会去掉开头的 BOM；stream: true 保证多字节字符跨分片时不被截断
   const textDecoder = new TextDecoder()
   const decoder = new ServerSentEventDecoder()
