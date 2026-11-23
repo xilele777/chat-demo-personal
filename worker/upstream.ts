@@ -5,7 +5,7 @@ import { reasoningEfforts } from './config.js'
 import { limitContext, CONTINUE_PROMPT } from './context.js'
 import { connectMcpTools, runMcpTool } from './mcp.js'
 import { openAIUsage } from './usage.js'
-import { reasoningText } from './reasoning.js'
+import { OpenAIContent } from './reasoning.js'
 import type { MessageUsage } from '../src/services/api/types.js'
 import {
   searchCall,
@@ -164,29 +164,28 @@ async function* normalizeOpenAI(
   let finish: string | null = null
   let ended = false
   let usage: MessageUsage | undefined
+  const content = new OpenAIContent()
   for await (const event of readServerSentEvents(stream, signal)) {
     if (event.data === '[DONE]') {
       ended = true
-      break
     }
-    const chunk = JSON.parse(event.data)
+    const chunk = ended ? {} : JSON.parse(event.data)
     if (chunk.usage) {
       usage = openAIUsage(chunk.usage)
     }
     if (chunk.error) {
       throw new Error(chunk.error.message ?? 'Upstream stream error')
     }
-    const choice = chunk.choices?.[0]
+    const choice = chunk.choices?.[0] ?? (ended ? {} : undefined)
     if (!choice) {
       continue
     }
     if (choice.delta?.tool_calls?.length) {
       throw new Error('Tool calls are not enabled in this application')
     }
-    for (const [kind, value] of [
-      ['thinking', reasoningText(choice.delta)],
-      ['text', choice.delta?.content],
-    ] as const) {
+    for (const [kind, value] of ended
+      ? content.finish()
+      : content.push(choice.delta ?? choice.message)) {
       if (typeof value !== 'string' || !value) {
         continue
       }
@@ -214,6 +213,9 @@ async function* normalizeOpenAI(
     }
     if (choice.finish_reason) {
       finish = choice.finish_reason
+    }
+    if (ended) {
+      break
     }
   }
   if (!finish || !ended) {
@@ -404,19 +406,19 @@ async function* completionEvents(
     ended = false
   let refused = false
   let usage: Record<string, number> | undefined
+  const content = new OpenAIContent()
   for await (const event of readServerSentEvents(response.body, signal)) {
     if (event.data === '[DONE]') {
       ended = true
-      break
     }
-    const chunk = JSON.parse(event.data)
+    const chunk = ended ? {} : JSON.parse(event.data)
     if (chunk.error) {
       throw new Error(chunk.error.message ?? 'Upstream stream error')
     }
     if (chunk.usage) {
       usage = chunk.usage
     }
-    const choice = chunk.choices?.[0]
+    const choice = chunk.choices?.[0] ?? (ended ? {} : undefined)
     if (!choice) {
       continue
     }
@@ -435,10 +437,9 @@ async function* completionEvents(
       }
       calls.set(delta.index, call)
     }
-    for (const [kind, value] of [
-      ['thinking', reasoningText(choice.delta)],
-      ['text', choice.delta?.content],
-    ] as const) {
+    for (const [kind, value] of ended
+      ? content.finish()
+      : content.push(choice.delta ?? choice.message)) {
       if (typeof value !== 'string' || !value) {
         continue
       }
@@ -469,6 +470,9 @@ async function* completionEvents(
     }
     if (choice.finish_reason) {
       finish = choice.finish_reason
+    }
+    if (ended) {
+      break
     }
   }
   if (!ended || !finish) {
@@ -502,12 +506,12 @@ async function* openAIReply(body: ChatRequest, env: Env, signal: AbortSignal) {
     let history = limitContext(system, converted.messages, env)
     const state = { index: -1 }
     const sourceIndexes = new Map<string, number>()
-    const totals = {
+    const totals: MessageUsage = {
       input_tokens: 0,
       cache_creation_input_tokens: 0,
       cache_read_input_tokens: 0,
       output_tokens: 0,
-      reasoning_tokens: 0,
+      cache_reported: false,
     }
     let hasUsage = false
     let searches = 0
@@ -542,12 +546,18 @@ async function* openAIReply(body: ChatRequest, env: Env, signal: AbortSignal) {
       )
       const result = yield* completionEvents(response, signal, state)
       if (result.usage) {
-        hasUsage = true
         const usage = openAIUsage(result.usage)
+        totals.cache_reported = hasUsage
+          ? Boolean(totals.cache_reported && usage.cache_reported)
+          : usage.cache_reported
+        hasUsage = true
         totals.input_tokens += usage.input_tokens
+        totals.cache_creation_input_tokens += usage.cache_creation_input_tokens
         totals.cache_read_input_tokens += usage.cache_read_input_tokens
         totals.output_tokens += usage.output_tokens
-        totals.reasoning_tokens += usage.reasoning_tokens ?? 0
+        if (usage.reasoning_tokens !== undefined) {
+          totals.reasoning_tokens = (totals.reasoning_tokens ?? 0) + usage.reasoning_tokens
+        }
       }
       if (!result.calls.length) {
         yield {

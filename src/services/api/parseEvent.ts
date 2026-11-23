@@ -176,12 +176,21 @@ const readUsage = (value: unknown) => {
     return undefined
   }
   const result: Record<string, unknown> = { ...value }
+  result.cache_reported =
+    typeof value.cache_reported === 'boolean'
+      ? value.cache_reported
+      : value.cache_read_input_tokens !== undefined ||
+        value.cache_creation_input_tokens !== undefined
   for (const key of [
     'input_tokens',
     'cache_creation_input_tokens',
     'cache_read_input_tokens',
     'output_tokens',
+    'reasoning_tokens',
   ]) {
+    if (key === 'reasoning_tokens' && value[key] === undefined) {
+      continue
+    }
     result[key] =
       typeof value[key] === 'number' && Number.isFinite(value[key]) && (value[key] as number) >= 0
         ? value[key]

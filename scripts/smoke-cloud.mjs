@@ -739,6 +739,7 @@ try {
     cache_read_input_tokens: 30,
     output_tokens: 40,
     reasoning_tokens: 20,
+    cache_reported: true,
   })
   const missingUsage = await (
     await call('/anthropic/v1/messages', 'POST', {

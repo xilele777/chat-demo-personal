@@ -5,7 +5,8 @@ import { revealMessage, getVisibleMessages } from '../src/services/chat/branches
 import { readMessageEvent } from '../src/services/api/parseEvent.ts'
 import { inputTokens, totalTokens, addUsage } from '../src/services/chat/usage.ts'
 import { openAIUsage } from '../worker/usage.ts'
-import { reasoningText } from '../worker/reasoning.ts'
+import { reasoningText, OpenAIContent } from '../worker/reasoning.ts'
+import { openAIStream } from '../worker/upstream.ts'
 
 assert.equal(
   reasoningText({
@@ -22,6 +23,64 @@ assert.equal(
   ''
 )
 assert.equal(reasoningText({ reasoning_content: '标准格式' }), '标准格式')
+assert.equal(reasoningText({ thinking: '兼容格式' }), '兼容格式')
+for (const chunks of [
+  ['<think>先检查</think>结果'],
+  [...'<think>先检查</think>结果'],
+  ['<thi', 'nk>先检查</thi', 'nk>结果'],
+]) {
+  const parser = new OpenAIContent()
+  const parts = chunks.flatMap((content) => parser.push({ content })).concat(parser.finish())
+  assert.equal(
+    parts
+      .filter(([kind]) => kind === 'thinking')
+      .map(([, value]) => value)
+      .join(''),
+    '先检查'
+  )
+  assert.equal(
+    parts
+      .filter(([kind]) => kind === 'text')
+      .map(([, value]) => value)
+      .join(''),
+    '结果'
+  )
+}
+const parser = new OpenAIContent()
+assert.deepEqual(
+  parser.push({
+    content: [
+      { type: 'thinking', thinking: '结构化思考' },
+      { type: 'text', text: '回答' },
+    ],
+  }),
+  [
+    ['thinking', '结构化思考'],
+    ['text', '回答'],
+  ]
+)
+assert.deepEqual(new OpenAIContent().push({ content: '代码里有 <think> 标签' }), [
+  ['text', '代码里有 <think> 标签'],
+])
+for (const [field, delta] of [
+  ['delta', { thinking: '字段思考' }],
+  ['message', { content: [{ type: 'reasoning', text: '结构化思考' }] }],
+  ['delta', { content: '<think>标签思考</think>回答' }],
+]) {
+  const sse = `data: ${JSON.stringify({ choices: [{ [field]: delta }] })}\n\ndata: ${JSON.stringify({ choices: [{ delta: { content: '正文' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`
+  const response = openAIStream(
+    new Response(sse, { headers: { 'Content-Type': 'text/event-stream' } }),
+    new AbortController().signal,
+    'test'
+  )
+  const stream = await response.text()
+  assert.match(stream, /thinking_delta/)
+  assert.match(stream, /text_delta/)
+  assert.match(stream, /message_stop/)
+}
+console.log(
+  'PASS: exposed reasoning fields, structured blocks, message fallback and fragmented think tags survive stream normalization'
+)
 
 const data = new Map()
 const storage = {
@@ -121,6 +180,16 @@ assert.equal(inputTokens(usage), 100)
 assert.equal(totalTokens(usage), 140)
 assert.equal(totalTokens(addUsage(usage, usage)), 280)
 assert.equal(addUsage(undefined, undefined), undefined)
+const deepseek = openAIUsage({
+  prompt_tokens: 100,
+  prompt_cache_hit_tokens: 80,
+  completion_tokens: 25,
+})
+assert.equal(deepseek.cache_read_input_tokens, 80)
+assert.equal(deepseek.input_tokens, 20)
+assert.equal(totalTokens(deepseek), 125)
+assert.equal(deepseek.reasoning_tokens, undefined)
+assert.equal(openAIUsage({ prompt_tokens: 100, completion_tokens: 5 }).cache_reported, false)
 const initial = readMessageEvent({
   type: 'message_start',
   message: { id: 'a', model: 'claude', usage: { input_tokens: 12, output_tokens: 0 } },

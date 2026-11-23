@@ -20,6 +20,14 @@ export const addUsage = (
       number(left?.cache_creation_input_tokens) + number(right?.cache_creation_input_tokens),
     cache_read_input_tokens:
       number(left?.cache_read_input_tokens) + number(right?.cache_read_input_tokens),
-    reasoning_tokens: number(left?.reasoning_tokens) + number(right?.reasoning_tokens),
+    ...(left?.reasoning_tokens !== undefined || right?.reasoning_tokens !== undefined
+      ? { reasoning_tokens: number(left?.reasoning_tokens) + number(right?.reasoning_tokens) }
+      : {}),
+    cache_reported: [left, right].every(
+      (usage) =>
+        !usage ||
+        (usage.cache_reported ??
+          Boolean(usage.cache_read_input_tokens || usage.cache_creation_input_tokens))
+    ),
   }
 }
