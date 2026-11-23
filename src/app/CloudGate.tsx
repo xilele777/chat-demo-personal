@@ -6,8 +6,10 @@ import {
   cloudMode,
   loadCloudConfig,
   useCloud,
+  type CloudConfig,
 } from '../services/cloud.js'
 import { useTranslate } from '../i18n/index.js'
+import { ChatGPTBrand } from '../components/base/ChatGPTBrand.js'
 import { Button } from '../components/base/Button.js'
 import { Modal } from '../components/base/Modal.js'
 import styles from './CloudGate.module.css'
@@ -17,6 +19,15 @@ export const CloudGate = ({ children }: { children: ReactNode }) => {
   const [status, setStatus] = useState<'loading' | 'ready' | 'login' | 'setup' | 'error'>(
     cloudMode ? 'loading' : 'ready'
   )
+  const [showLoading, setShowLoading] = useState(false)
+  useEffect(() => {
+    if (status !== 'loading') {
+      setShowLoading(false)
+      return
+    }
+    const timer = setTimeout(() => setShowLoading(true), 700)
+    return () => clearTimeout(timer)
+  }, [status])
   const [attempt, setAttempt] = useState(0)
   const [password, setPassword] = useState('')
   const [visible, setVisible] = useState(false)
@@ -40,12 +51,17 @@ export const CloudGate = ({ children }: { children: ReactNode }) => {
       const auth = (await (await cloudFetch('/auth')).json()) as {
         configured: boolean
         authenticated: boolean
+        config?: CloudConfig
       }
       if (!active) {
         return
       }
       if (auth.authenticated) {
-        await loadCloudConfig()
+        if (auth.config) {
+          useCloud.setState({ config: auth.config, authRequired: false })
+        } else {
+          await loadCloudConfig()
+        }
         if (active) {
           setStatus('ready')
         }
@@ -83,6 +99,14 @@ export const CloudGate = ({ children }: { children: ReactNode }) => {
     } finally {
       setSubmitting(false)
     }
+  }
+  if (status === 'loading') {
+    return (
+      <div className={styles.boot} aria-busy="true">
+        <ChatGPTBrand />
+        {showLoading ? <span role="status">{t('sessionLoading')}</span> : null}
+      </div>
+    )
   }
   return status === 'ready' ? (
     children

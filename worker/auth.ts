@@ -1,3 +1,4 @@
+import { publicConfig } from './config.js'
 import { SignJWT, jwtVerify } from 'jose'
 import { HttpError, json, type Env } from './types.js'
 
@@ -59,7 +60,11 @@ export async function authentication(
     } catch {
       /* Only expose login state. */
     }
-    return json({ configured: configured(env), authenticated })
+    return json({
+      configured: configured(env),
+      authenticated,
+      ...(authenticated ? { config: publicConfig(env) } : {}),
+    })
   }
   if (path === '/api/auth/login' && request.method === 'POST') {
     if (!configured(env)) {
