@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { toSessionSummary, type Session, type SessionSummary } from './types.js'
+import { searchSession, type HistorySearchResult } from './search.js'
 
 /** IndexedDB 存储结构版本；新增或调整存储、索引时递增。 */
 const DB_VERSION = 13
@@ -99,6 +100,25 @@ export const loadSessionSummaries = async (): Promise<SessionSummary[]> =>
 
 export const loadSession = async (id: string): Promise<Session | undefined> =>
   (await getDB()).get('sessions', id)
+
+export const searchLocalHistory = async (
+  query: string,
+  signal: AbortSignal
+): Promise<HistorySearchResult[]> => {
+  const summaries = (await loadSessionSummaries()).sort((a, b) => b.updatedAt - a.updatedAt)
+  const results: HistorySearchResult[] = []
+  for (const summary of summaries) {
+    signal.throwIfAborted()
+    const session = await loadSession(summary.id)
+    if (session) {
+      results.push(...searchSession(session, query, 50 - results.length))
+    }
+    if (results.length >= 50) {
+      break
+    }
+  }
+  return results
+}
 
 /** 云端缓存与本地历史分开存储；只有版本校验通过后才能用于展示。 */
 export const loadCachedCloudSession = async (id: string): Promise<Session | undefined> =>

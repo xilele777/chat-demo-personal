@@ -19,6 +19,8 @@ type Settings = {
   reasoningEffort: ReasoningEffort
   search: boolean
   siderCollapsed: boolean
+  model: string | null
+  customModels: string[]
 }
 
 const KEYS = {
@@ -31,6 +33,8 @@ const KEYS = {
   reasoningEffort: 'chat-demo:reasoning-effort',
   search: 'chat-demo:search',
   siderCollapsed: 'chat-demo:sider-collapsed',
+  model: 'chat-demo:selected-model',
+  customModels: 'chat-demo:custom-models',
 } as const
 
 const read = (key: string) => {
@@ -105,7 +109,34 @@ export const useSettings = create<Settings>(() => ({
   search:
     !(typeof __CLOUD_MODE__ !== 'undefined' && __CLOUD_MODE__) && read(KEYS.search) === 'true',
   siderCollapsed: read(KEYS.siderCollapsed) === 'true',
+  model: read(KEYS.model),
+  customModels: (() => {
+    try {
+      const values: unknown = JSON.parse(read(KEYS.customModels) ?? '[]')
+      return Array.isArray(values)
+        ? values.filter(
+            (value): value is string => typeof value === 'string' && value.length <= 200
+          )
+        : []
+    } catch {
+      return []
+    }
+  })(),
 }))
+
+export const setModel = (model: string) => {
+  if (useSettings.getState().model === model) {
+    return
+  }
+  write(KEYS.model, model)
+  useSettings.setState({ model, reasoningEffort: 'auto' })
+  write(KEYS.reasoningEffort, 'auto')
+}
+
+export const setCustomModels = (customModels: string[]) => {
+  write(KEYS.customModels, JSON.stringify(customModels))
+  useSettings.setState({ customModels })
+}
 
 export const setLocale = (locale: Locale) => {
   write(KEYS.locale, locale)

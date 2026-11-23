@@ -10,6 +10,16 @@ import {
   type UploadTask,
 } from '../attachments.js'
 import type { FileAttachment } from './types.js'
+import { readDraftTexts, writeDraftTexts } from './draftStorage.js'
+
+const cloudDrafts = typeof __CLOUD_MODE__ !== 'undefined' && __CLOUD_MODE__
+const restoreTexts = () => {
+  try {
+    return readDraftTexts(localStorage, cloudDrafts)
+  } catch {
+    return new Map<string | null, string>()
+  }
+}
 
 export type DraftAttachment = {
   /** 本地标识，也是 IndexedDB 原件与上传任务的 key */
@@ -22,15 +32,28 @@ type Draft = { text: string; attachments: DraftAttachment[] }
 
 export const EMPTY_DRAFT: Draft = { text: '', attachments: [] }
 
-/** 草稿只保存在本次页面的内存中，独立于会话详情缓存；null 是新对话的草稿。 */
-export const useDrafts = create<{ drafts: Map<string | null, Draft> }>(() => ({
-  drafts: new Map(),
-}))
+/** 文字按模式保存在本机；附件仅在本次页面中保留。null 是新对话的草稿。 */
+export const useDrafts = create<{ drafts: Map<string | null, Draft>; storageError: boolean }>(
+  () => ({
+    drafts: new Map([...restoreTexts()].map(([id, text]) => [id, { text, attachments: [] }])),
+    storageError: false,
+  })
+)
+
+const persistTexts = () => {
+  let saved = false
+  try {
+    saved = writeDraftTexts(localStorage, cloudDrafts, useDrafts.getState().drafts)
+  } catch {
+    /* Storage is unavailable. Keep the in-memory draft and report it. */
+  }
+  useDrafts.setState({ storageError: !saved })
+}
 
 export const getDraft = (sessionId: string | null): Draft =>
   useDrafts.getState().drafts.get(sessionId) ?? EMPTY_DRAFT
 
-const updateDraft = (sessionId: string | null, update: (draft: Draft) => Draft) =>
+const updateDraft = (sessionId: string | null, update: (draft: Draft) => Draft) => {
   useDrafts.setState((state) => {
     const draft = update(state.drafts.get(sessionId) ?? EMPTY_DRAFT)
     const drafts = new Map(state.drafts)
@@ -41,6 +64,9 @@ const updateDraft = (sessionId: string | null, update: (draft: Draft) => Draft) 
     }
     return { drafts }
   })
+  // Synchronous writes also cover immediate refresh/close after typing or sending.
+  persistTexts()
+}
 
 export const setDraftText = (sessionId: string | null, text: string) =>
   updateDraft(sessionId, (draft) => ({ ...draft, text }))
@@ -145,4 +171,5 @@ export const clearAllDrafts = () => {
     draft.attachments.forEach((attachment) => cancelUpload(attachment.id))
   }
   useDrafts.setState({ drafts: new Map() })
+  persistTexts()
 }

@@ -115,3 +115,34 @@ export const selectVersion = (original: Session, messageId: string): Session => 
     ),
   }
 }
+
+/** Reveal a search hit even if it belongs to a currently hidden branch. */
+export const revealMessage = (original: Session, messageId: string): Session => {
+  const session = normalizeSession(original)
+  const byId = new Map(session.messages.map((message) => [message.id, message]))
+  let current = byId.get(messageId)
+  if (!current) {
+    return original
+  }
+  const selected = new Map<string, string>()
+  const visited = new Set<string>()
+  while (current.parentId) {
+    if (visited.has(current.id)) {
+      return original
+    }
+    visited.add(current.id)
+    const parent = byId.get(current.parentId)
+    if (!parent) {
+      return original
+    }
+    selected.set(parent.id, current.id)
+    current = parent
+  }
+  return {
+    ...session,
+    rootMessageId: current.id,
+    messages: session.messages.map((message) =>
+      selected.has(message.id) ? { ...message, selectedChildId: selected.get(message.id) } : message
+    ),
+  }
+}

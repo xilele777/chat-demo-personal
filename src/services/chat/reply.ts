@@ -78,6 +78,15 @@ export const applyEvent = (
   const next: AssistantMessage =
     reply.status === 'streaming' ? reply : { ...reply, status: 'streaming' }
   switch (event.type) {
+    case 'mcp_tool_status':
+      return {
+        ...next,
+        prefix: false,
+        mcpTools: [
+          ...(next.mcpTools ?? []).filter((tool) => tool.id !== event.block.id),
+          event.block,
+        ],
+      }
     case 'message_start':
       return { ...next, usage: event.message.usage ?? next.usage }
     case 'content_block_start': {
@@ -129,7 +138,19 @@ export const applyEvent = (
         ...next,
         stopReason: event.delta.stop_reason,
         stopDetails: event.delta.stop_details,
-        usage: event.usage ?? next.usage,
+        usage: event.usage
+          ? {
+              ...next.usage,
+              ...event.usage,
+              input_tokens: event.usage.input_tokens || next.usage?.input_tokens || 0,
+              cache_read_input_tokens:
+                event.usage.cache_read_input_tokens || next.usage?.cache_read_input_tokens || 0,
+              cache_creation_input_tokens:
+                event.usage.cache_creation_input_tokens ||
+                next.usage?.cache_creation_input_tokens ||
+                0,
+            }
+          : next.usage,
       }
     default:
       return next

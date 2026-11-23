@@ -165,11 +165,30 @@ const readDelta = (value: unknown): ContentBlockDelta | null => {
   }
 }
 
-const isUsage = (value: unknown) =>
-  isRecord(value) &&
-  ['input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens', 'output_tokens'].every(
-    (key) => typeof value[key] === 'number' && Number.isFinite(value[key])
-  )
+const readUsage = (value: unknown) => {
+  if (
+    !isRecord(value) ||
+    !['input_tokens', 'output_tokens'].some(
+      (key) =>
+        typeof value[key] === 'number' && Number.isFinite(value[key]) && (value[key] as number) >= 0
+    )
+  ) {
+    return undefined
+  }
+  const result: Record<string, unknown> = { ...value }
+  for (const key of [
+    'input_tokens',
+    'cache_creation_input_tokens',
+    'cache_read_input_tokens',
+    'output_tokens',
+  ]) {
+    result[key] =
+      typeof value[key] === 'number' && Number.isFinite(value[key]) && (value[key] as number) >= 0
+        ? value[key]
+        : 0
+  }
+  return result
+}
 
 /** 未识别或无法安全消费的事件静默丢弃，不影响后续有效内容与正常结束。 */
 export const readMessageEvent = (value: unknown): MessageStreamEvent | null => {
@@ -177,6 +196,25 @@ export const readMessageEvent = (value: unknown): MessageStreamEvent | null => {
     return null
   }
   switch (value.type) {
+    case 'ping':
+      return { type: 'ping' }
+    case 'mcp_tool_status': {
+      const block = value.block
+      if (
+        !isRecord(block) ||
+        block.type !== 'mcp_tool' ||
+        !isString(block.id) ||
+        !isString(block.server) ||
+        !isString(block.name) ||
+        !isRecord(block.input) ||
+        !['approval', 'running', 'done', 'error', 'denied'].includes(block.status as string) ||
+        !isOptionalString(block.output) ||
+        !isOptionalString(block.approvalId)
+      ) {
+        return null
+      }
+      return value as MessageStreamEvent
+    }
     case 'message_start':
       if (!isRecord(value.message)) {
         return null
@@ -185,7 +223,7 @@ export const readMessageEvent = (value: unknown): MessageStreamEvent | null => {
         ...value,
         message: {
           ...value.message,
-          usage: isUsage(value.message.usage) ? value.message.usage : undefined,
+          usage: readUsage(value.message.usage),
         },
       } as MessageStreamEvent
     case 'content_block_start': {
@@ -220,7 +258,7 @@ export const readMessageEvent = (value: unknown): MessageStreamEvent | null => {
           ...value.delta,
           title: isOptionalString(value.delta.title) ? value.delta.title : undefined,
         },
-        usage: isUsage(value.usage) ? value.usage : undefined,
+        usage: readUsage(value.usage),
       } as MessageStreamEvent
     case 'message_stop':
       break

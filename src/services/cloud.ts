@@ -11,6 +11,8 @@ export type CloudConfig = {
   speech: boolean
   thinking: boolean
   reasoningEfforts: Exclude<ReasoningEffort, 'auto'>[]
+  reasoningEffortsAutomatic?: boolean
+  mcp?: boolean
 }
 
 export const useCloud = create<{
@@ -32,6 +34,11 @@ export class CloudError extends Error {
 
 export async function cloudFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const controller = new AbortController()
+  const onAbort = () => controller.abort(init.signal?.reason)
+  init.signal?.addEventListener('abort', onAbort, { once: true })
+  if (init.signal?.aborted) {
+    onAbort()
+  }
   const timer = setTimeout(() => controller.abort(), 60_000)
   try {
     const response = await fetch(`/api${path}`, {
@@ -51,6 +58,7 @@ export async function cloudFetch(path: string, init: RequestInit = {}): Promise<
     return response
   } finally {
     clearTimeout(timer)
+    init.signal?.removeEventListener('abort', onAbort)
   }
 }
 

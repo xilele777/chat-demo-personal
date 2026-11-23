@@ -15,7 +15,16 @@ import {
   useUploads,
 } from '../attachments.js'
 import { useSettings } from '../settings.js'
-import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
+import {
+  appendBranch,
+  getVisibleMessages,
+  normalizeSession,
+  selectVersion,
+  revealMessage,
+} from './branches.js'
+import { activeSessionKey } from './draftStorage.js'
+import { selectedModel, modelReasoningEfforts } from '../models.js'
+import { addUsage } from './usage.js'
 import * as db from './db.js'
 import {
   clearAllDrafts,
@@ -84,6 +93,9 @@ type ChatState = {
   activeId: string | null
   /** 正在生成回复的会话 */
   streaming: Record<string, AbortController>
+  sessionSaving: Record<string, boolean>
+  sessionSavedAt: Record<string, number>
+  sessionSaveDetails: Record<string, { message: string; status?: number }>
 }
 
 export const useChatStore = create<ChatState>(() => ({
@@ -96,7 +108,21 @@ export const useChatStore = create<ChatState>(() => ({
   sessionSaveErrors: {},
   activeId: null,
   streaming: {},
+  sessionSaving: {},
+  sessionSavedAt: {},
+  sessionSaveDetails: {},
 }))
+
+// Keep the last destination so reopening the page also reopens its text draft.
+useChatStore.subscribe((state, previous) => {
+  if (state.activeId !== previous.activeId) {
+    try {
+      localStorage.setItem(activeSessionKey(cloudMode), state.activeId ?? '')
+    } catch {
+      /* Keep navigation working without storage. */
+    }
+  }
+})
 
 const { getState: get, setState: set } = useChatStore
 
@@ -129,6 +155,7 @@ const streamFlushes = new Map<string, () => void>()
 let accessSequence = 0
 let historyEpoch = 0
 let initTask: Promise<void> | undefined
+const saveAttempts = new Map<string, number>()
 const sessionLoads = new Map<string, { promise: Promise<void> }>()
 
 const touchSession = (id: string) => sessionAccess.set(id, ++accessSequence)
@@ -201,6 +228,9 @@ const persist = (sessionId: string) => {
       return
     }
     const epoch = historyEpoch
+    const attempt = (saveAttempts.get(sessionId) ?? 0) + 1
+    saveAttempts.set(sessionId, attempt)
+    set((state) => ({ sessionSaving: { ...state.sessionSaving, [sessionId]: true } }))
     const files = pendingFiles.get(sessionId)
     void db
       .saveSession(session, files)
@@ -217,6 +247,10 @@ const persist = (sessionId: string) => {
             sessionSaveErrors: Object.fromEntries(
               Object.entries(state.sessionSaveErrors).filter(([id]) => id !== sessionId)
             ),
+            sessionSavedAt: { ...state.sessionSavedAt, [sessionId]: Date.now() },
+            sessionSaveDetails: Object.fromEntries(
+              Object.entries(state.sessionSaveDetails).filter(([id]) => id !== sessionId)
+            ),
           }))
           trimSessionCache()
         }
@@ -224,9 +258,26 @@ const persist = (sessionId: string) => {
       .catch((error: unknown) => {
         db.reportStorageError('save session')(error)
         if (epoch === historyEpoch && getSession(sessionId)) {
+          if (saveAttempts.get(sessionId) !== attempt) {
+            return
+          }
           set((state) => ({
             sessionSaveErrors: { ...state.sessionSaveErrors, [sessionId]: true },
+            sessionSaveDetails: {
+              ...state.sessionSaveDetails,
+              [sessionId]: {
+                message: error instanceof Error ? error.message : String(error),
+                ...((error as { status?: number })?.status
+                  ? { status: (error as { status: number }).status }
+                  : {}),
+              },
+            },
           }))
+        }
+      })
+      .finally(() => {
+        if (epoch === historyEpoch && saveAttempts.get(sessionId) === attempt) {
+          set((state) => ({ sessionSaving: { ...state.sessionSaving, [sessionId]: false } }))
         }
       })
   }
@@ -445,13 +496,22 @@ export const bindChatPersistence = () => {
 /** 按当前开关创建回复：深度思考对应 thinking，智能搜索控制 deepseek_web_search。 */
 const createReply = (): AssistantMessage => {
   const { thinking, search } = useSettings.getState()
+  const config = useCloud.getState().config
+  const model = cloudMode ? selectedModel() : MODEL
+  const effort = useSettings.getState().reasoningEffort
+  const reasoningRequested =
+    cloudMode &&
+    config?.protocol === 'openai' &&
+    effort !== 'none' &&
+    modelReasoningEfforts(model, config.reasoningEfforts, config.reasoningEffortsAutomatic).length >
+      0
   return {
     id: createId(),
     role: 'assistant',
     createdAt: Date.now(),
-    model: cloudMode ? (useCloud.getState().config?.model ?? MODEL) : MODEL,
+    model,
     reasoningEffort: useSettings.getState().reasoningEffort,
-    thinking: thinking && (!cloudMode || Boolean(useCloud.getState().config?.thinking)),
+    thinking: reasoningRequested || (thinking && (!cloudMode || Boolean(config?.thinking))),
     search: search && (!cloudMode || Boolean(useCloud.getState().config?.search)),
     prefix: true,
     status: 'pending',
@@ -497,6 +557,18 @@ export const initChat = (): Promise<void> => {
           }
         }
         set({ ready: true, sessions: sortSessions(summaries) })
+        try {
+          const previousId = localStorage.getItem(activeSessionKey(cloudMode))
+          if (
+            previousId &&
+            get().activeId === null &&
+            summaries.some((session) => session.id === previousId)
+          ) {
+            selectSession(previousId)
+          }
+        } catch {
+          /* No last-session state available. */
+        }
         if (cloudMode) {
           // 先绘制列表，再低优先级预热最近两条；不一次下载全部历史。
           setTimeout(() => {
@@ -634,6 +706,9 @@ export const replaceHistory = async (write: () => Promise<void>): Promise<number
       sessionCache: {},
       sessionLoadErrors: {},
       sessionSaveErrors: {},
+      sessionSaving: {},
+      sessionSavedAt: {},
+      sessionSaveDetails: {},
       activeId: null,
     })
     return summaries.length
@@ -664,6 +739,49 @@ export const selectSession = (id: string) => {
     void ensureSessionLoaded(id)
     trimSessionCache()
   }
+}
+
+export const revealSessionMessage = async (
+  sessionId: string,
+  messageId: string | null,
+  signal?: AbortSignal
+): Promise<boolean> => {
+  if (
+    get().importingHistory ||
+    deletingSessions.has(sessionId) ||
+    !get().sessions.some((session) => session.id === sessionId)
+  ) {
+    return false
+  }
+  await ensureSessionLoaded(sessionId)
+  if (
+    signal?.aborted ||
+    get().importingHistory ||
+    deletingSessions.has(sessionId) ||
+    !get().sessions.some((session) => session.id === sessionId)
+  ) {
+    return false
+  }
+  const session = getSession(sessionId)
+  if (!session) {
+    return false
+  }
+  if (!messageId) {
+    selectSession(sessionId)
+    return true
+  }
+  if (!session.messages.some((message) => message.id === messageId)) {
+    return false
+  }
+  if (!getVisibleMessages(session).some((message) => message.id === messageId)) {
+    if (getStreamController(sessionId)) {
+      return false
+    }
+    updateSession(sessionId, (session) => revealMessage(session, messageId))
+    persist(sessionId)
+  }
+  selectSession(sessionId)
+  return true
 }
 
 /** 预加载与点击共用读取任务；不切换当前对话，并限制后台并发。 */
@@ -968,7 +1086,7 @@ export const continueReply = (sessionId: string, messageId: string) => {
   const reply: AssistantMessage = {
     ...previous,
     // 未记录请求配置的回复，续写时使用默认模型和当前开关。
-    model: previous.model ?? MODEL,
+    model: previous.model ?? (cloudMode ? selectedModel() : MODEL),
     thinking: previous.thinking ?? thinking,
     reasoningEffort: previous.reasoningEffort ?? useSettings.getState().reasoningEffort,
     search: previous.search ?? search,
@@ -1294,7 +1412,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
     titleRequests.add(controller)
   }
   set((state) => ({ streaming: { ...state.streaming, [sessionId]: controller } }))
-  let reply = initial
+  let reply = { ...initial, usage: undefined } as AssistantMessage
   let frame = 0
   const flush = () => {
     cancelAnimationFrame(frame)
@@ -1340,7 +1458,11 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             useCloud.getState().config?.protocol === 'openai' &&
             initial.reasoningEffort &&
             initial.reasoningEffort !== 'auto' &&
-            useCloud.getState().config?.reasoningEfforts.includes(initial.reasoningEffort)
+            modelReasoningEfforts(
+              initial.model ?? selectedModel(),
+              useCloud.getState().config?.reasoningEfforts,
+              useCloud.getState().config?.reasoningEffortsAutomatic
+            ).includes(initial.reasoningEffort)
               ? { reasoning_effort: initial.reasoningEffort }
               : {}),
             safety_check: SAFETY_CHECK,
@@ -1420,6 +1542,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       }
     }
   } finally {
+    reply = { ...reply, usage: addUsage(request.prefix?.usage, reply.usage) }
     titleRequests.delete(controller)
     streamFlushes.delete(sessionId)
     cancelAnimationFrame(frame)
