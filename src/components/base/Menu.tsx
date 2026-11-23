@@ -21,7 +21,12 @@ export const Menu = ({
   children: (props: { open: boolean; toggle: () => void }) => ReactNode
 }) => {
   const [open, setOpen] = useState(false)
-  const close = () => setOpen(false)
+  const close = () => {
+    if (floatingRef.current?.contains(document.activeElement)) {
+      anchorRef.current?.querySelector('button')?.focus({ preventScroll: true })
+    }
+    setOpen(false)
+  }
   // 左侧对齐并再左移 5px，让菜单文字与触发元素图标对齐
   const { anchorRef, floatingRef, position } = useAnchoredPosition<HTMLSpanElement, HTMLDivElement>(
     open,
@@ -36,25 +41,21 @@ export const Menu = ({
       </span>
       {open
         ? createPortal(
-            <div
-              ref={floatingRef}
-              className={styles.menu}
-              style={position ?? undefined}
-              role="menu"
-            >
-              {options.map((option) => (
-                <div
+            <div ref={floatingRef} className={styles.menu} style={position ?? undefined}>
+              {options.map((option, index) => (
+                <button
+                  type="button"
+                  autoFocus={index === 0}
                   key={option.key}
-                  role="menuitem"
                   className={clsx(styles.option, option.danger && styles.danger)}
                   onClick={() => {
-                    setOpen(false)
+                    close()
                     option.onSelect()
                   }}
                 >
                   <span className={styles.icon}>{option.icon}</span>
                   {option.label}
-                </div>
+                </button>
               ))}
             </div>,
             document.body

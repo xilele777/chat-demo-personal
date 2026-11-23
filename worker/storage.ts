@@ -11,10 +11,16 @@ export async function storage(request: Request, env: Env, path: string): Promise
     const [state, sessions] = await env.DB.batch([
       env.DB.prepare('SELECT generation, revision FROM cloud_state WHERE id = 1'),
       env.DB.prepare(
-        'SELECT id, title, created_at AS createdAt, updated_at AS updatedAt, revision FROM sessions WHERE deleted = 0 ORDER BY updated_at DESC'
+        "SELECT id, title, created_at AS createdAt, updated_at AS updatedAt, revision, COALESCE(json_extract(data, '$.pinned'), 0) AS pinned FROM sessions WHERE deleted = 0 ORDER BY updated_at DESC"
       ),
     ])
-    return json({ ...(state.results[0] as object), sessions: sessions.results })
+    return json({
+      ...(state.results[0] as object),
+      sessions: (sessions.results as Record<string, unknown>[]).map((session) => ({
+        ...session,
+        pinned: Boolean(session.pinned),
+      })),
+    })
   }
   if (path === '/api/history' && request.method === 'PUT') {
     const body = (await request.json()) as { revision: string; sessions: unknown[] }

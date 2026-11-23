@@ -252,6 +252,68 @@ try {
   )
   console.log('PASS: multi-device conflicts, atomic replacement and deletion')
 
+  // Pinning is part of the same revision-protected snapshot seen by other devices.
+  const pinIndex = await (await call('/sessions')).json()
+  await call('/sessions/pin-check', 'PUT', {
+    session: session('pin-check'),
+    revision: null,
+    generation: pinIndex.generation,
+  })
+  const beforePin = await (await call('/sessions/pin-check')).json()
+  assert.equal(
+    (
+      await call('/sessions/pin-check', 'PUT', {
+        session: { ...beforePin.session, pinned: true },
+        revision: beforePin.revision,
+        generation: beforePin.generation,
+      })
+    ).status,
+    200
+  )
+  assert.equal(
+    (await (await call('/sessions')).json()).sessions.find((s) => s.id === 'pin-check').pinned,
+    true
+  )
+  const afterPin = await (await call('/sessions/pin-check')).json()
+  assert.equal(afterPin.session.pinned, true)
+  assert.equal(afterPin.session.updatedAt, beforePin.session.updatedAt)
+  assert.deepEqual(afterPin.session.messages, beforePin.session.messages)
+  assert.equal(
+    (
+      await call('/sessions/pin-check', 'PUT', {
+        session: beforePin.session,
+        revision: beforePin.revision,
+        generation: beforePin.generation,
+      })
+    ).status,
+    409
+  )
+  assert.equal(
+    (
+      await call('/sessions/pin-check', 'PUT', {
+        session: { ...afterPin.session, pinned: false },
+        revision: afterPin.revision,
+        generation: afterPin.generation,
+      })
+    ).status,
+    200
+  )
+  assert.equal(
+    (await (await call('/sessions')).json()).sessions.find((s) => s.id === 'pin-check').pinned,
+    false
+  )
+  assert.equal(
+    (
+      await call('/sessions/invalid-pin', 'PUT', {
+        session: { ...session('invalid-pin'), pinned: 'yes' },
+        revision: null,
+        generation: afterPin.generation,
+      })
+    ).status,
+    400
+  )
+  console.log('PASS: shared pin state, unpinning, unchanged messages and stale-device protection')
+
   // Originals remain byte-identical across devices; text uploads enter the provider context.
   const original = new Uint8Array([0, 1, 2, 128, 255])
   assert.equal(

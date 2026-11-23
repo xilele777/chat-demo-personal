@@ -18,6 +18,7 @@ export interface CloudSession {
   title: string
   createdAt: number
   updatedAt: number
+  pinned?: boolean
   messages: Record<string, unknown>[]
   rootMessageId?: string | null
 }
@@ -47,6 +48,7 @@ export const readSession = (value: unknown): CloudSession => {
     typeof s.title !== 'string' ||
     !Number.isFinite(s.createdAt) ||
     !Number.isFinite(s.updatedAt) ||
+    (s.pinned !== undefined && typeof s.pinned !== 'boolean') ||
     !Array.isArray(s.messages) ||
     s.messages.some(
       (m) => !m || typeof m.id !== 'string' || !['user', 'assistant'].includes(String(m.role))

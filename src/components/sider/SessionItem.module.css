@@ -24,7 +24,8 @@
     &:hover,
     &.active {
       .action {
-        display: flex;
+        opacity: 1;
+        pointer-events: auto;
       }
     }
   }
@@ -37,10 +38,35 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   line-height: 18px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pin {
+  display: flex;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+
+.title:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.item:focus-within .action {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .action {
-  display: none;
+  display: flex;
+  opacity: 0;
+  pointer-events: none;
   flex-shrink: 0;
   margin-left: 4px;
 }
@@ -61,7 +87,8 @@
 
 @media (hover: none) {
   .action {
-    display: flex;
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 

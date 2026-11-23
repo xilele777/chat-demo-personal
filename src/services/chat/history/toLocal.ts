@@ -276,6 +276,7 @@ export const toLocalSession = (file: SessionFile): LocalSession => {
     id: file.id,
     // 空标题按「新对话」显示，导出时还原为 null。
     title: file.title ?? '',
+    pinned: file.pinned,
     createdAt: time(file.inserted_at),
     updatedAt: time(file.updated_at),
     ...buildTree(file),

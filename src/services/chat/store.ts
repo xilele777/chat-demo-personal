@@ -113,7 +113,10 @@ const getStreamController = (id: string) => {
 }
 
 const sameSummary = (a: SessionSummary, b: SessionSummary) =>
-  a.title === b.title && a.createdAt === b.createdAt && a.updatedAt === b.updatedAt
+  a.title === b.title &&
+  a.createdAt === b.createdAt &&
+  a.updatedAt === b.updatedAt &&
+  Boolean(a.pinned) === Boolean(b.pinned)
 
 const sessionAccess = new Map<string, number>()
 const unsavedSessions = new Set<string>()
@@ -620,6 +623,24 @@ export const selectSession = (id: string) => {
     set({ activeId: id })
     void ensureSessionLoaded(id)
     trimSessionCache()
+  }
+}
+
+export const setSessionPinned = (id: string, pinned: boolean) => {
+  if (get().importingHistory || deletingSessions.has(id)) {
+    return
+  }
+  if (getSession(id)) {
+    updateSession(id, (session) => ({ ...session, pinned }))
+    persist(id)
+  } else {
+    set((state) => ({
+      sessions: state.sessions.map((session) =>
+        session.id === id ? { ...session, pinned } : session
+      ),
+    }))
+    // Loading merges the newest list metadata before saving, including edits made during loading.
+    void ensureSessionLoaded(id)
   }
 }
 
