@@ -5,6 +5,7 @@ import { useUploads } from '../../services/attachments.js'
 import type { FileAttachment } from '../../services/chat/types.js'
 import { IconPhotoErrorFill20, IconRefreshOutline16 } from '../base/icons.js'
 import { Tooltip } from '../base/Tooltip.js'
+import { ImagePreview } from '../files/ImagePreview.js'
 import { FileCard } from '../files/FileCard.js'
 import { useFileView } from '../files/useFileView.js'
 import styles from './MessageFile.module.css'
@@ -113,10 +114,10 @@ export const MessageFile = ({
     }
 
     // 正常态：链接到原件
-    return link ? (
-      <a className={clsx(styles.image, styles.imageThumb)} {...link} title={file.name}>
+    return url ? (
+      <ImagePreview className={clsx(styles.image, styles.imageThumb)} url={url} name={file.name}>
         {preview}
-      </a>
+      </ImagePreview>
     ) : (
       // 原件还没加载出来（极短暂）
       <div className={styles.image} />

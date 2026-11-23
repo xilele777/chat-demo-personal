@@ -43,7 +43,7 @@ export const useFileView = (source: File | string, name: string) => {
 
   const url = state?.source === source && state.type === type ? state.url : undefined
   const image = isImage(type)
-  const openInTab = type === 'application/pdf' || (image && type !== 'image/svg+xml')
+  const openInTab = type === 'application/pdf'
   const action = openInTab ? { target: '_blank', rel: 'noreferrer' } : { download: name }
   return { url, image, link: url ? { href: url, ...action } : undefined }
 }

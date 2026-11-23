@@ -44,6 +44,8 @@ export const zh = {
   sessionLoadFailed: '对话加载失败，请重试',
   sessionSaveFailed: '对话或附件尚未保存到本机，关闭页面可能丢失，请重试',
   sessionDeleteFailed: '删除对话失败，请重试',
+  imagePreview: '预览图片',
+  downloadImage: '下载原图',
   settings: '设置',
   appName: 'ChatGPT',
   pinnedChats: '置顶',
