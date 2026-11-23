@@ -296,7 +296,12 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
             size="m"
             tone="primary"
             icon={<IconPaperclipOutline16 />}
-            tooltip={t('uploadFile')}
+            tooltip={t(
+              cloudMode && capabilities?.protocol !== 'deepseek'
+                ? 'uploadGenericTooltip'
+                : 'uploadFile'
+            )}
+            aria-label={t('uploadFile')}
             disabled={importingHistory}
             onClick={() => ensureApiKey() && fileInputRef.current?.click()}
           />

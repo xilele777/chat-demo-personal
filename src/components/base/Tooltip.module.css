@@ -13,7 +13,7 @@
   color: var(--dsw-static-neutral-bluish-00);
   font-size: 12px;
   line-height: 1.5;
-  pointer-events: none;
+  pointer-events: auto;
 
   [data-ds-dark-theme] & {
     color: var(--dsw-alias-label-primary);

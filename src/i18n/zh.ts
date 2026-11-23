@@ -295,6 +295,7 @@ export const zh = {
   deactivatedSearchTooltip: '按需搜索网页',
   search: '智能搜索',
   uploadFile: '上传文件',
+  uploadGenericTooltip: '目前支持上传图片和文本/代码文件（文本最大 2 MiB），暂不支持 PDF 和 Office 文档',
   chatInputStopButtonTooltip: '停止生成',
   uploadMaxMBSize: '单个文件大小超过限制（{size}MB），请调整后重试',
   uploadMaxFiles: '上传文件最多支持 {count} 个',
