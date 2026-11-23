@@ -187,12 +187,15 @@ const run = async () => {
       (event) => event.type === 'content_block_delta' && event.delta.type === 'thinking_delta'
     )
   )
-  assert.deepEqual(events.find((event) => event.type === 'message_delta').usage, {
-    input_tokens: 32,
-    cache_read_input_tokens: 4,
-    cache_creation_input_tokens: 2,
-    output_tokens: 14,
-  })
+  assert.deepEqual(
+    events.findLast((event) => event.type === 'message_delta' && event.delta.stop_reason).usage,
+    {
+      input_tokens: 32,
+      cache_read_input_tokens: 4,
+      cache_creation_input_tokens: 2,
+      output_tokens: 14,
+    }
+  )
   assert.equal(modelRequests[1].messages.at(-2).content[0].signature, 'signed-thinking')
   assert.equal(modelRequests[1].messages.at(-1).content[0].type, 'tool_result')
   assert.equal(approvals.size, 0)

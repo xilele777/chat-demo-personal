@@ -224,7 +224,7 @@ export type MessageStreamEvent =
   | {
       type: 'message_start'
       /** id 为不带 msg_ 前缀的 UUID，等于响应头 x-ds-request-id */
-      message: { id: string; model: string; usage?: MessageUsage }
+      message: { id: string; model: string; usage?: Partial<MessageUsage> }
     }
   | { type: 'content_block_start'; index: number; content_block: OutputBlockStart }
   | { type: 'content_block_delta'; index: number; delta: ContentBlockDelta }
@@ -233,12 +233,12 @@ export type MessageStreamEvent =
       type: 'message_delta'
       /** title 仅在开启标题且生成成功时出现；stop_details 仅在 refusal 时出现 */
       delta: {
-        stop_reason: StopReason
+        stop_reason?: StopReason
         stop_sequence: null
         stop_details?: StopDetails
         title?: string
       }
-      usage?: MessageUsage
+      usage?: Partial<MessageUsage>
     }
   | { type: 'message_stop' }
   | { type: 'ping' }

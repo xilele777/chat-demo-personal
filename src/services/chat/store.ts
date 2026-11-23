@@ -1416,11 +1416,12 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
   }
   set((state) => ({ streaming: { ...state.streaming, [sessionId]: controller } }))
   let reply = { ...initial, usage: undefined } as AssistantMessage
+  const visibleReply = () => ({ ...reply, usage: addUsage(request.prefix?.usage, reply.usage) })
   let frame = 0
   const flush = () => {
     cancelAnimationFrame(frame)
     frame = 0
-    updateReply(sessionId, reply)
+    updateReply(sessionId, visibleReply())
   }
   streamFlushes.set(sessionId, flush)
 
@@ -1437,7 +1438,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           ? prepared.prefix.latestReminder
           : createLatestReminder(useSettings.getState())
         reply = { ...reply, latestReminder }
-        updateReply(sessionId, reply)
+        updateReply(sessionId, visibleReply())
         persist(sessionId)
         const messages = toRequestMessages(
           prepared.history,
@@ -1490,7 +1491,11 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             titleRequests.delete(controller)
           }
           reply = applyEvent(reply, event, Date.now(), blockIndexes)
-          if (document.visibilityState === 'hidden') {
+          if (event.type === 'message_delta' && event.usage && !event.delta.stop_reason) {
+            // A completed tool stage must survive cancellation or closing the page during the next stage.
+            flush()
+            persist(sessionId)
+          } else if (document.visibilityState === 'hidden') {
             flush()
           } else {
             frame ||= requestAnimationFrame(flush)
@@ -1545,17 +1550,17 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       }
     }
   } finally {
-    reply = { ...reply, usage: addUsage(request.prefix?.usage, reply.usage) }
+    const finalReply = visibleReply()
     titleRequests.delete(controller)
     streamFlushes.delete(sessionId)
     cancelAnimationFrame(frame)
-    updateReply(sessionId, reply)
+    updateReply(sessionId, finalReply)
     set((state) => ({
       streaming: Object.fromEntries(
         Object.entries(state.streaming).filter(([id]) => id !== sessionId)
       ),
     }))
     persist(sessionId)
-    void generateSessionTitle(sessionId, request.question, reply)
+    void generateSessionTitle(sessionId, request.question, finalReply)
   }
 }

@@ -4,7 +4,7 @@ import { HttpError, json, type Env } from './types.js'
 import { reasoningEfforts } from './config.js'
 import { limitContext, CONTINUE_PROMPT } from './context.js'
 import { connectMcpTools, runMcpTool } from './mcp.js'
-import { openAIUsage } from './usage.js'
+import { hasOpenAIUsage, mergeOpenAIUsage, openAIUsage } from './usage.js'
 import { OpenAIContent } from './reasoning.js'
 import type { MessageUsage } from '../src/services/api/types.js'
 import {
@@ -163,7 +163,7 @@ async function* normalizeOpenAI(
   let active = ''
   let finish: string | null = null
   let ended = false
-  let usage: MessageUsage | undefined
+  let usage: Record<string, unknown> | undefined
   const content = new OpenAIContent()
   for await (const event of readServerSentEvents(stream, signal)) {
     if (event.data === '[DONE]') {
@@ -171,7 +171,7 @@ async function* normalizeOpenAI(
     }
     const chunk = ended ? {} : JSON.parse(event.data)
     if (chunk.usage) {
-      usage = openAIUsage(chunk.usage)
+      usage = mergeOpenAIUsage(usage, chunk.usage)
     }
     if (chunk.error) {
       throw new Error(chunk.error.message ?? 'Upstream stream error')
@@ -231,7 +231,7 @@ async function* normalizeOpenAI(
         finish === 'length' ? 'max_tokens' : finish === 'content_filter' ? 'refusal' : 'end_turn',
       stop_sequence: null,
     },
-    ...(usage ? { usage } : {}),
+    ...(usage && hasOpenAIUsage(usage) ? { usage: openAIUsage(usage) } : {}),
   }
   yield { type: 'message_stop' }
 }
@@ -373,7 +373,7 @@ type Completion = {
   text: string
   calls: ToolCall[]
   finish: string
-  usage?: Record<string, number>
+  usage?: Record<string, unknown>
 }
 
 const webSearchTool = {
@@ -405,7 +405,7 @@ async function* completionEvents(
     finish = '',
     ended = false
   let refused = false
-  let usage: Record<string, number> | undefined
+  let usage: Record<string, unknown> | undefined
   const content = new OpenAIContent()
   for await (const event of readServerSentEvents(response.body, signal)) {
     if (event.data === '[DONE]') {
@@ -416,7 +416,7 @@ async function* completionEvents(
       throw new Error(chunk.error.message ?? 'Upstream stream error')
     }
     if (chunk.usage) {
-      usage = chunk.usage
+      usage = mergeOpenAIUsage(usage, chunk.usage)
     }
     const choice = chunk.choices?.[0] ?? (ended ? {} : undefined)
     if (!choice) {
@@ -481,7 +481,12 @@ async function* completionEvents(
   if (active) {
     yield { type: 'content_block_stop', index: state.index }
   }
-  return { text, calls: [...calls.values()], finish: refused ? 'content_filter' : finish, usage }
+  return {
+    text,
+    calls: [...calls.values()],
+    finish: refused ? 'content_filter' : finish,
+    usage,
+  }
 }
 
 async function* openAIReply(body: ChatRequest, env: Env, signal: AbortSignal) {
@@ -545,7 +550,7 @@ async function* openAIReply(body: ChatRequest, env: Env, signal: AbortSignal) {
           : {}
       )
       const result = yield* completionEvents(response, signal, state)
-      if (result.usage) {
+      if (result.usage && hasOpenAIUsage(result.usage)) {
         const usage = openAIUsage(result.usage)
         totals.cache_reported = hasUsage
           ? Boolean(totals.cache_reported && usage.cache_reported)
@@ -558,6 +563,7 @@ async function* openAIReply(body: ChatRequest, env: Env, signal: AbortSignal) {
         if (usage.reasoning_tokens !== undefined) {
           totals.reasoning_tokens = (totals.reasoning_tokens ?? 0) + usage.reasoning_tokens
         }
+        yield { type: 'message_delta', delta: {}, usage: { ...totals } }
       }
       if (!result.calls.length) {
         yield {
@@ -876,6 +882,7 @@ export async function* anthropicReply(body: ChatRequest, env: Env, signal: Abort
         ] as const) {
           totals[key] += Number.isFinite(usage[key]) && usage[key] >= 0 ? usage[key] : 0
         }
+        yield { type: 'message_delta', delta: {}, usage: { ...totals } }
       }
       const toolBlocks = [...blocks.entries()].filter(([, block]) => block.type === 'tool_use')
       if (!toolBlocks.length) {

@@ -14,6 +14,7 @@ import type {
   ReplyStatus,
   UserMessage,
 } from './types.js'
+import { mergeUsageSnapshot } from './usage.js'
 
 /**
  * 文件按 Files API 的 file_id（附件的 serverId）引用：图片用 image 块，其余用 document 块。
@@ -88,7 +89,7 @@ export const applyEvent = (
         ],
       }
     case 'message_start':
-      return { ...next, usage: event.message.usage ?? next.usage }
+      return { ...next, usage: mergeUsageSnapshot(next.usage, event.message.usage) }
     case 'content_block_start': {
       blockIndexes.delete(event.index)
       const block = toReplyBlock(event.content_block, now)
@@ -136,21 +137,9 @@ export const applyEvent = (
     case 'message_delta':
       return {
         ...next,
-        stopReason: event.delta.stop_reason,
-        stopDetails: event.delta.stop_details,
-        usage: event.usage
-          ? {
-              ...next.usage,
-              ...event.usage,
-              input_tokens: event.usage.input_tokens || next.usage?.input_tokens || 0,
-              cache_read_input_tokens:
-                event.usage.cache_read_input_tokens || next.usage?.cache_read_input_tokens || 0,
-              cache_creation_input_tokens:
-                event.usage.cache_creation_input_tokens ||
-                next.usage?.cache_creation_input_tokens ||
-                0,
-            }
-          : next.usage,
+        stopReason: event.delta.stop_reason ?? next.stopReason,
+        stopDetails: event.delta.stop_details ?? next.stopDetails,
+        usage: mergeUsageSnapshot(next.usage, event.usage),
       }
     default:
       return next

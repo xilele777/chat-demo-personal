@@ -15,6 +15,7 @@
     "db:remote": "wrangler d1 migrations apply personal-chat --remote",
     "type:worker": "tsc -p tsconfig.worker.json",
     "test:context": "node --import tsx scripts/check-context.mjs",
+    "test:streaming-ui": "node scripts/check-streaming-ui.mjs",
     "test:product": "node --import tsx scripts/check-product.mjs",
     "test:ui": "node scripts/check-ui.mjs",
     "test:interactions": "node scripts/check-interactions.mjs",

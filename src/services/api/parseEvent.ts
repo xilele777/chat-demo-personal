@@ -3,6 +3,7 @@ import type {
   MessageStreamEvent,
   OutputBlockStart,
   TextCitation,
+  MessageUsage,
 } from './types.js'
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -165,10 +166,16 @@ const readDelta = (value: unknown): ContentBlockDelta | null => {
   }
 }
 
-const readUsage = (value: unknown) => {
+const readUsage = (value: unknown): Partial<MessageUsage> | undefined => {
   if (
     !isRecord(value) ||
-    !['input_tokens', 'output_tokens'].some(
+    ![
+      'input_tokens',
+      'output_tokens',
+      'cache_read_input_tokens',
+      'cache_creation_input_tokens',
+      'reasoning_tokens',
+    ].some(
       (key) =>
         typeof value[key] === 'number' && Number.isFinite(value[key]) && (value[key] as number) >= 0
     )
@@ -176,11 +183,17 @@ const readUsage = (value: unknown) => {
     return undefined
   }
   const result: Record<string, unknown> = { ...value }
-  result.cache_reported =
-    typeof value.cache_reported === 'boolean'
-      ? value.cache_reported
-      : value.cache_read_input_tokens !== undefined ||
-        value.cache_creation_input_tokens !== undefined
+  if (
+    value.cache_reported !== undefined ||
+    value.cache_read_input_tokens !== undefined ||
+    value.cache_creation_input_tokens !== undefined
+  ) {
+    result.cache_reported =
+      typeof value.cache_reported === 'boolean'
+        ? value.cache_reported
+        : value.cache_read_input_tokens !== undefined ||
+          value.cache_creation_input_tokens !== undefined
+  }
   for (const key of [
     'input_tokens',
     'cache_creation_input_tokens',
@@ -188,7 +201,7 @@ const readUsage = (value: unknown) => {
     'output_tokens',
     'reasoning_tokens',
   ]) {
-    if (key === 'reasoning_tokens' && value[key] === undefined) {
+    if (value[key] === undefined) {
       continue
     }
     result[key] =
@@ -196,7 +209,7 @@ const readUsage = (value: unknown) => {
         ? value[key]
         : 0
   }
-  return result
+  return result as Partial<MessageUsage>
 }
 
 /** 未识别或无法安全消费的事件静默丢弃，不影响后续有效内容与正常结束。 */
@@ -255,9 +268,11 @@ export const readMessageEvent = (value: unknown): MessageStreamEvent | null => {
     case 'message_delta':
       if (
         !isRecord(value.delta) ||
-        !['end_turn', 'max_tokens', 'tool_use', 'refusal'].includes(
-          value.delta.stop_reason as string
-        )
+        (value.delta.stop_reason !== undefined
+          ? !['end_turn', 'max_tokens', 'tool_use', 'refusal'].includes(
+              value.delta.stop_reason as string
+            )
+          : !readUsage(value.usage))
       ) {
         return null
       }

@@ -4,7 +4,8 @@ import { searchSession } from '../src/services/chat/search.ts'
 import { revealMessage, getVisibleMessages } from '../src/services/chat/branches.ts'
 import { readMessageEvent } from '../src/services/api/parseEvent.ts'
 import { inputTokens, totalTokens, addUsage } from '../src/services/chat/usage.ts'
-import { openAIUsage } from '../worker/usage.ts'
+import { hasOpenAIUsage, mergeOpenAIUsage, openAIUsage } from '../worker/usage.ts'
+import { applyEvent } from '../src/services/chat/reply.ts'
 import { reasoningText, OpenAIContent } from '../worker/reasoning.ts'
 import { openAIStream } from '../worker/upstream.ts'
 
@@ -194,13 +195,68 @@ const initial = readMessageEvent({
   type: 'message_start',
   message: { id: 'a', model: 'claude', usage: { input_tokens: 12, output_tokens: 0 } },
 })
-assert.equal(initial.message.usage.cache_read_input_tokens, 0)
+assert.equal(initial.message.usage.cache_read_input_tokens, undefined)
 const delta = readMessageEvent({
   type: 'message_delta',
   delta: { stop_reason: 'end_turn' },
   usage: { output_tokens: 15 },
 })
 assert.equal(delta.usage.output_tokens, 15)
+const partial = readMessageEvent({ type: 'message_delta', delta: {}, usage: { output_tokens: 8 } })
+let usageReply = { id: 'usage', role: 'assistant', status: 'pending', blocks: [] }
+usageReply = applyEvent(usageReply, initial, 1, new Map())
+usageReply = applyEvent(usageReply, partial, 2, new Map())
+usageReply = applyEvent(usageReply, delta, 3, new Map())
+assert.equal(usageReply.usage.input_tokens, 12)
+assert.equal(usageReply.usage.output_tokens, 15)
+usageReply = applyEvent(
+  usageReply,
+  readMessageEvent({ type: 'message_delta', delta: {}, usage: { input_tokens: 0 } }),
+  4,
+  new Map()
+)
+assert.equal(usageReply.usage.input_tokens, 0)
+assert.equal(usageReply.stopReason, 'end_turn')
+const responsesUsage = openAIUsage({
+  input_tokens: '100',
+  output_tokens: '40',
+  input_tokens_details: { cached_tokens: '30' },
+  output_tokens_details: { reasoning_tokens: '20' },
+})
+assert.deepEqual(responsesUsage, usage)
+const snapshots = mergeOpenAIUsage(
+  { prompt_tokens: 100, prompt_tokens_details: { cached_tokens: 30 } },
+  { completion_tokens: 40, completion_tokens_details: { reasoning_tokens: 20 } }
+)
+assert.deepEqual(openAIUsage(snapshots), usage)
+assert.equal(mergeOpenAIUsage(snapshots, {}), snapshots)
+assert.equal(hasOpenAIUsage({}), false)
+assert.equal(hasOpenAIUsage({ prompt_tokens: 'invalid' }), false)
+const frames = [
+  {
+    choices: [{ delta: { content: '回答' } }],
+    usage: { input_tokens: 100, input_tokens_details: { cached_tokens: 30 } },
+  },
+  {
+    choices: [{ delta: {}, finish_reason: 'stop' }],
+    usage: { output_tokens: 40, output_tokens_details: { reasoning_tokens: 20 } },
+  },
+  { choices: [], usage: {} },
+]
+const normalized = await openAIStream(
+  new Response(
+    frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join('') + 'data: [DONE]\n\n',
+    { headers: { 'Content-Type': 'text/event-stream' } }
+  ),
+  new AbortController().signal,
+  'test'
+).text()
+const finalUsage = normalized
+  .split('\n')
+  .filter((line) => line.startsWith('data: '))
+  .map((line) => JSON.parse(line.slice(6)))
+  .find((event) => event.type === 'message_delta').usage
+assert.deepEqual(finalUsage, usage)
 assert.equal(
   readMessageEvent({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }).usage,
   undefined

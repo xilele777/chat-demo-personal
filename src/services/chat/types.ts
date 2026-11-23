@@ -94,7 +94,7 @@ export type AssistantMessage = MessageBranch & {
   blocks: ReplyBlock[]
   stopReason?: StopReason
   stopDetails?: StopDetails
-  /** 最近一次请求的用量，续写后更新 */
+  /** 本回答的累计用量，包含续写和本轮工具循环中的已返回用量 */
   usage?: MessageUsage
   mcpTools?: McpToolBlock[]
   error?: {

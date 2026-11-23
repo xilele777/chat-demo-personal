@@ -6,6 +6,23 @@ export const inputTokens = (usage: MessageUsage) =>
   number(usage.cache_creation_input_tokens) +
   number(usage.cache_read_input_tokens)
 export const totalTokens = (usage: MessageUsage) => inputTokens(usage) + number(usage.output_tokens)
+/** Merge cumulative provider frames; absent values preserve earlier counts, explicit zero replaces them. */
+export const mergeUsageSnapshot = (
+  left: MessageUsage | undefined,
+  right: Partial<MessageUsage> | undefined
+): MessageUsage | undefined => {
+  if (!right) {
+    return left
+  }
+  return {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    ...left,
+    ...right,
+  }
+}
 export const addUsage = (
   left: MessageUsage | undefined,
   right: MessageUsage | undefined
