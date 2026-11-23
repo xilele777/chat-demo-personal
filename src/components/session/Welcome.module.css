@@ -15,6 +15,11 @@
   max-width: var(--message-list-max-width);
   margin: auto;
   padding: 0 32px 64px;
+  position: relative;
+  overflow-y: auto;
+  > :last-child {
+    margin-top: 6px;
+  }
 }
 
 .greeting {
@@ -27,6 +32,18 @@
   font-weight: 600;
   text-align: center;
   color: var(--dsw-alias-label-primary);
+  flex-wrap: wrap;
+  max-width: 100%;
+  svg {
+    width: 34px;
+    height: 25px;
+    margin-right: 10px;
+    flex-shrink: 0;
+  }
+  h1 {
+    margin: 0;
+    font: inherit;
+  }
 }
 
 @media (max-width: 439px) {
@@ -34,6 +51,9 @@
     font-size: 20px;
     line-height: 28px;
     font-weight: 500;
+    svg {
+      transform: scale(0.88);
+    }
   }
 }
 
@@ -43,27 +63,13 @@
   }
 
   .welcome {
-    flex: 1;
     min-height: 0;
-    justify-content: flex-end;
-    max-width: none;
-    margin: 0;
-    padding: 0 16px env(safe-area-inset-bottom);
+    max-height: 100%;
+    padding-bottom: max(64px, env(safe-area-inset-bottom));
   }
 
   .greeting {
     flex-shrink: 0;
-    margin: auto 0;
-  }
-
-  .caveat {
-    flex-shrink: 0;
-    width: 100%;
-    padding: 6px 0;
-    font-size: 11px;
-    line-height: 16px;
-    text-align: center;
-    color: var(--dsw-alias-label-tertiary);
-    user-select: none;
+    margin-bottom: 21px;
   }
 }

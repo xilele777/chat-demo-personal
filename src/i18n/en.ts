@@ -1,6 +1,13 @@
 import type { zh } from './zh.js'
 
 export const en = {
+  returnHome: 'Return to new chat',
+  multiSelect: 'Select conversations',
+  selectedChats: '{count} conversations selected',
+  exitMultiSelect: 'Exit selection',
+  selectAllChats: 'Select all conversations',
+  deselectAllChats: 'Deselect all',
+  deleteSelectedChats: 'Delete {count} selected conversations?',
   tokenCacheRate: 'Cache hit rate',
   tokenUncached: 'Uncached input',
   tokenVisibleOutput: 'Text and other output',

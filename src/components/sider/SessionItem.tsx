@@ -1,7 +1,12 @@
 import clsx from 'clsx'
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
-import { IconEditOutline16, IconEllipsisOutline16, IconTrashOutline16 } from '../base/icons.js'
+import {
+  IconEditOutline16,
+  IconEllipsisOutline16,
+  IconTrashOutline16,
+  IconCheckOutline16,
+} from '../base/icons.js'
 import {
   prefetchSession,
   renameSession,
@@ -19,10 +24,20 @@ export const SessionItem = memo(function SessionItem({
   session,
   active,
   onDelete,
+  multi = false,
+  selected = false,
+  disabled = false,
+  onToggle,
+  onMultiSelect,
 }: {
   session: SessionSummary
   active: boolean
   onDelete: () => void
+  multi?: boolean
+  selected?: boolean
+  disabled?: boolean
+  onToggle?: () => void
+  onMultiSelect?: () => void
 }) {
   const t = useTranslate()
   const [editing, setEditing] = useState(false)
@@ -31,7 +46,7 @@ export const SessionItem = memo(function SessionItem({
   useEffect(() => cancelPrefetch, [cancelPrefetch])
   const displayTitle = session.title || t('untitledChat')
 
-  if (editing) {
+  if (editing && !multi) {
     const finish = (title: string) => {
       setEditing(false)
       if (title.trim() && title.trim() !== displayTitle) {
@@ -58,19 +73,45 @@ export const SessionItem = memo(function SessionItem({
 
   return (
     <div
-      className={clsx(styles.item, active && styles.active)}
+      data-session-item={session.id}
+      className={clsx(styles.item, (multi ? selected : active) && styles.active)}
       onPointerEnter={() => {
         cancelPrefetch()
-        prefetchTimer.current = window.setTimeout(() => prefetchSession(session.id), 100)
+        if (!multi) {
+          prefetchTimer.current = window.setTimeout(() => prefetchSession(session.id), 100)
+        }
       }}
       onPointerLeave={cancelPrefetch}
-      onFocus={() => prefetchSession(session.id)}
+      onFocus={() => {
+        if (!multi) {
+          prefetchSession(session.id)
+        }
+      }}
       onClick={() => {
+        if (disabled) {
+          return
+        }
+        if (multi) {
+          onToggle?.()
+          return
+        }
         selectSession(session.id)
         closeMobileSider()
       }}
     >
-      <button type="button" className={styles.title} aria-current={active ? 'page' : undefined}>
+      {multi ? (
+        <span className={clsx(styles.check, selected && styles.checked)} aria-hidden="true">
+          {selected ? '✓' : ''}
+        </span>
+      ) : null}
+      <button
+        type="button"
+        className={styles.title}
+        disabled={disabled}
+        aria-current={!multi && active ? 'page' : undefined}
+        role={multi ? 'checkbox' : undefined}
+        aria-checked={multi ? selected : undefined}
+      >
         {displayTitle}
       </button>
       {session.pinned ? (
@@ -78,39 +119,47 @@ export const SessionItem = memo(function SessionItem({
           <PinIcon />
         </span>
       ) : null}
-      <div className={styles.action} onClick={(event) => event.stopPropagation()}>
-        <Menu
-          options={[
-            {
-              key: 'pin',
-              label: t(session.pinned ? 'unpinChat' : 'pinChat'),
-              icon: <PinIcon />,
-              onSelect: () => setSessionPinned(session.id, !session.pinned),
-            },
-            {
-              key: 'rename',
-              label: t('sessionItemMenuRenameOption'),
-              icon: <IconEditOutline16 />,
-              onSelect: () => setEditing(true),
-            },
-            {
-              key: 'delete',
-              label: t('delete'),
-              icon: <IconTrashOutline16 />,
-              danger: true,
-              onSelect: onDelete,
-            },
-          ]}
-        >
-          {({ toggle }) => (
-            <IconButton
-              icon={<IconEllipsisOutline16 />}
-              aria-label={`${t('more')} · ${displayTitle}`}
-              onClick={toggle}
-            />
-          )}
-        </Menu>
-      </div>
+      {multi ? null : (
+        <div className={styles.action} onClick={(event) => event.stopPropagation()}>
+          <Menu
+            options={[
+              {
+                key: 'multi',
+                label: t('multiSelect'),
+                icon: <IconCheckOutline16 />,
+                onSelect: () => onMultiSelect?.(),
+              },
+              {
+                key: 'pin',
+                label: t(session.pinned ? 'unpinChat' : 'pinChat'),
+                icon: <PinIcon />,
+                onSelect: () => setSessionPinned(session.id, !session.pinned),
+              },
+              {
+                key: 'rename',
+                label: t('sessionItemMenuRenameOption'),
+                icon: <IconEditOutline16 />,
+                onSelect: () => setEditing(true),
+              },
+              {
+                key: 'delete',
+                label: t('delete'),
+                icon: <IconTrashOutline16 />,
+                danger: true,
+                onSelect: onDelete,
+              },
+            ]}
+          >
+            {({ toggle }) => (
+              <IconButton
+                icon={<IconEllipsisOutline16 />}
+                aria-label={`${t('more')} · ${displayTitle}`}
+                onClick={toggle}
+              />
+            )}
+          </Menu>
+        </div>
+      )}
     </div>
   )
 })

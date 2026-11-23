@@ -52,6 +52,23 @@
   flex-shrink: 0;
   margin-left: 6px;
 }
+.check {
+  width: 20px;
+  height: 20px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--dsw-alias-border-l2);
+  border-radius: 50%;
+  margin-right: 10px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+}
+.checked {
+  border-color: var(--dsw-alias-button-primary-fill);
+  background: var(--dsw-alias-button-primary-fill);
+  color: white;
+}
 
 .title:focus-visible {
   outline: 2px solid currentColor;

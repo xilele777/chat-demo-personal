@@ -115,6 +115,87 @@
   color: var(--dsw-alias-label-tertiary);
   background-color: var(--dsw-specific-sidebar-fill);
   user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.batchEntry {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.batchEntry:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+}
+.batchEntry svg {
+  width: 13px;
+  height: 13px;
+}
+.batchHeading {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 10px;
+  font-size: 14px;
+}
+.batchActions {
+  display: flex;
+  height: 64px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+.batchActions button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.batchActions button + button {
+  border-left: 1px solid var(--dsw-alias-border-l1);
+}
+.batchActions button:hover:not(:disabled) {
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+}
+.batchActions .danger {
+  color: var(--dsw-alias-state-error-primary);
+}
+.batchActions button:disabled,
+.batchEntry:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.batchActions button:focus-visible,
+.batchEntry:focus-visible {
+  outline: 2px solid var(--dsw-alias-button-primary-fill);
+  outline-offset: -2px;
+}
+.deleteList {
+  max-height: 220px;
+  overflow: auto;
+  padding-left: 20px;
+  overflow-wrap: anywhere;
+}
+@media (pointer: coarse) {
+  .batchEntry {
+    width: 44px;
+    height: 32px;
+  }
 }
 
 .bottom {
@@ -173,6 +254,7 @@
   align-items: center;
   flex-shrink: 0;
   gap: 12px;
+  width: max-content;
 }
 
 .collapsedGroup {
@@ -200,6 +282,42 @@
   position: absolute;
   inset: 0;
   z-index: 799;
+  background: rgb(0 0 0 / 0.22);
+}
+.drawerLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 799;
+  visibility: hidden;
+  pointer-events: none;
+  .drawer {
+    transform: translateX(-100%);
+  }
+  .drawerMask {
+    opacity: 0;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    transition: visibility 0s 280ms;
+    .drawer {
+      transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .drawerMask {
+      transition: opacity 200ms ease;
+    }
+  }
+}
+.drawerOpen {
+  visibility: visible;
+  pointer-events: auto;
+  .drawer {
+    transform: translateX(0);
+  }
+  .drawerMask {
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    transition-delay: 0s;
+  }
 }
 
 .mobile {

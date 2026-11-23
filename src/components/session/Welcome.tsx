@@ -4,8 +4,9 @@ import { ChatInput } from '../chatInput/ChatInput.js'
 import { MobileHeader } from './MobileHeader.js'
 import styles from './Welcome.module.css'
 import { DesktopHeader } from './DesktopHeader.js'
+import { ChatGPTMark } from '../base/ChatGPTBrand.js'
 
-/** 新对话：问候语 + 输入框。桌面端居中；移动端输入框吸底 */
+/** 新对话：问候语与输入框作为整体居中，与原版欢迎页保持一致。 */
 export const Welcome = () => {
   const t = useTranslate()
   const isMobile = useIsMobile()
@@ -13,9 +14,11 @@ export const Welcome = () => {
     <div className={styles.container}>
       {isMobile ? <MobileHeader /> : <DesktopHeader />}
       <div className={styles.welcome}>
-        <div className={styles.greeting}>{t('welcomeMessageChat250808')}</div>
+        <div className={styles.greeting}>
+          <ChatGPTMark />
+          <h1>{t('welcomeMessageChat250808')}</h1>
+        </div>
         <ChatInput sessionId={null} />
-        {isMobile ? <div className={styles.caveat}>{t('contentCaveat')}</div> : null}
       </div>
     </div>
   )

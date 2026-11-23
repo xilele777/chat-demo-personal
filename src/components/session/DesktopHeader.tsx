@@ -7,7 +7,13 @@ export const DesktopHeader = ({ title }: { title?: string }) => {
   const siderCollapsed = useSettings((state) => state.siderCollapsed)
   return (
     <div className={styles.header} data-chat-header>
-      {siderCollapsed ? <CollapsedSider /> : null}
+      <div
+        className={`${styles.controls} ${siderCollapsed ? styles.controlsOpen : ''}`}
+        aria-hidden={!siderCollapsed}
+        {...({ inert: siderCollapsed ? undefined : '' } as Record<string, string | undefined>)}
+      >
+        <CollapsedSider />
+      </div>
       {title ? <div className={styles.title}>{title}</div> : null}
     </div>
   )

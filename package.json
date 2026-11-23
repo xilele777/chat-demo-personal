@@ -17,6 +17,7 @@
     "test:context": "node --import tsx scripts/check-context.mjs",
     "test:product": "node --import tsx scripts/check-product.mjs",
     "test:ui": "node scripts/check-ui.mjs",
+    "test:interactions": "node scripts/check-interactions.mjs",
     "test:anthropic": "node --import tsx scripts/check-anthropic.mjs",
     "test:cloud": "node --import tsx scripts/smoke-cloud.mjs",
     "type": "tsc -p tsconfig.json",

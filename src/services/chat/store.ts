@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { clearSessionSelection } from './selection.js'
 import { cloudMode, cloudFetch, cloudJson, useCloud } from '../cloud.js'
 import * as cloudDb from './cloudDb.js'
 import * as localDb from './localDb.js'
@@ -727,6 +728,7 @@ export const replaceHistory = async (write: () => Promise<void>): Promise<number
 
 export const newChat = () => {
   if (!get().importingHistory) {
+    clearSessionSelection()
     set({ activeId: null })
     trimSessionCache()
   }
@@ -734,6 +736,7 @@ export const newChat = () => {
 
 export const selectSession = (id: string) => {
   if (!get().importingHistory && get().sessions.some((session) => session.id === id)) {
+    clearSessionSelection()
     touchSession(id)
     set({ activeId: id })
     void ensureSessionLoaded(id)

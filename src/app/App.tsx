@@ -25,7 +25,7 @@ import { onUploadNotice } from '../services/attachments.js'
 import { Button } from '../components/base/Button.js'
 import { stopReadAloud } from '../services/speech/readAloud.js'
 import { DesktopHeader } from '../components/session/DesktopHeader.js'
-import { closeMobileSider } from '../components/sider/mobileSiderState.js'
+import { closeMobileSider, useMobileSider } from '../components/sider/mobileSiderState.js'
 import { MobileSider, Sider } from '../components/sider/Sider.js'
 import styles from './App.module.css'
 import { HistorySearch } from '../components/search/HistorySearch.js'
@@ -36,6 +36,7 @@ import { loadModels } from '../services/models.js'
 export const App = () => {
   const t = useTranslate()
   const isMobile = useIsMobile()
+  const mobileSiderOpen = useMobileSider((state) => state.open)
   const locale = useSettings((state) => state.locale)
   // 移动端侧边栏以独立抽屉管理开合状态
   const siderCollapsed = useSettings((state) => state.siderCollapsed) && !isMobile
@@ -121,8 +122,25 @@ export const App = () => {
   return (
     <>
       <div ref={frameRef} className={styles.frame}>
-        {isMobile ? <MobileSider /> : siderCollapsed ? null : <Sider />}
-        <main className={styles.main}>
+        {isMobile ? (
+          <MobileSider />
+        ) : (
+          <div
+            className={`${styles.sidebarSlot} ${siderCollapsed ? styles.sidebarHidden : ''}`}
+            aria-hidden={siderCollapsed}
+            {...({ inert: siderCollapsed ? '' : undefined } as Record<string, string | undefined>)}
+          >
+            <Sider />
+          </div>
+        )}
+        <main
+          className={styles.main}
+          aria-hidden={isMobile && mobileSiderOpen}
+          {...({ inert: isMobile && mobileSiderOpen ? '' : undefined } as Record<
+            string,
+            string | undefined
+          >)}
+        >
           {saveError ? (
             <div className={styles.saveError} role="alert">
               <details>

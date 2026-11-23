@@ -1,4 +1,11 @@
 export const zh = {
+  returnHome: '返回新对话',
+  multiSelect: '多选对话',
+  selectedChats: '已选择 {count} 个对话',
+  exitMultiSelect: '退出多选',
+  selectAllChats: '全选对话',
+  deselectAllChats: '取消全选',
+  deleteSelectedChats: '删除选中的 {count} 个对话？',
   tokenCacheRate: '缓存命中率',
   tokenUncached: '未缓存输入',
   tokenVisibleOutput: '正文与其他输出',

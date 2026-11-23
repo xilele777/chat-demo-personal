@@ -14,6 +14,27 @@
   min-width: 0;
 }
 
+.sidebarSlot {
+  width: 261px;
+  flex-shrink: 0;
+  overflow: hidden;
+  @media (prefers-reduced-motion: no-preference) {
+    transition: width 280ms cubic-bezier(0.22, 1, 0.36, 1);
+    > div {
+      transition:
+        transform 280ms cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 180ms ease;
+    }
+  }
+}
+.sidebarHidden {
+  width: 0;
+  > div {
+    transform: translateX(-32px);
+    opacity: 0;
+  }
+}
+
 .content {
   position: relative;
   flex: 1;
