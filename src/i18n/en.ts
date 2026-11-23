@@ -54,6 +54,7 @@ export const en = {
   sessionSaveFailed:
     'Chats or attachments have not been saved locally. Retry before closing this page.',
   sessionDeleteFailed: 'Unable to delete this chat. Please try again.',
+  replyProcess: 'Thinking and search',
   settings: 'Settings',
   appName: 'ChatGPT',
   pinnedChats: 'Pinned',

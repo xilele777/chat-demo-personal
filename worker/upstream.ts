@@ -166,7 +166,7 @@ async function* normalizeOpenAI(
       throw new Error('Tool calls are not enabled in this application')
     }
     for (const [kind, value] of [
-      ['thinking', choice.delta?.reasoning_content],
+      ['thinking', choice.delta?.reasoning_content ?? choice.delta?.reasoning],
       ['text', choice.delta?.content],
     ] as const) {
       if (typeof value !== 'string' || !value) {

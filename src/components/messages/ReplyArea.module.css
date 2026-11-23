@@ -6,6 +6,12 @@
   display: flex;
   align-items: center;
   height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
   margin-bottom: 2px;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
@@ -15,6 +21,17 @@
   &:hover {
     color: var(--dsw-alias-label-primary);
   }
+}
+
+.title:focus-visible,
+.row:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.steps[hidden] {
+  display: none;
 }
 
 .titleIcon {
@@ -137,6 +154,10 @@
 }
 
 .row {
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
   position: relative;
   display: flex;
   align-items: center;
@@ -182,6 +203,14 @@
   &.active {
     --search-row-site-logo-color: var(--dsw-alias-interactive-bg-hover);
   }
+}
+
+.searchQueries {
+  margin: 0 0 6px 22px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
 }
 
 .prefix,

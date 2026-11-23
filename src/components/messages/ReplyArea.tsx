@@ -1,6 +1,6 @@
 import { useTranslate } from '../../i18n/index.js'
 import clsx from 'clsx'
-import { memo, useEffect, useState, type ReactNode } from 'react'
+import { memo, useEffect, useId, useState, type ReactNode } from 'react'
 import {
   IconBrowseOutline16,
   IconBrowseWarningOutline16,
@@ -64,7 +64,8 @@ export const ReplyArea = memo(function ReplyArea({
   streaming: boolean
   hasResponse: boolean
 }) {
-  useTranslate()
+  const t = useTranslate()
+  const stepsId = useId()
   const [open, setOpen] = useState(true)
   const titleActive = streaming && !hasResponse
   useTicker(titleActive, 1000)
@@ -72,34 +73,40 @@ export const ReplyArea = memo(function ReplyArea({
     return null
   }
   // 未记录请求开关时，按是否有思考内容显示标题。
-  const thinking = message.thinking ?? view.steps.some((step) => step.type === 'thinking')
-  const title = thinking ? getAreaTitle(view, streaming, Date.now(), hasResponse) : null
+  const thinking = message.thinking || view.steps.some((step) => step.type === 'thinking')
+  const title = thinking
+    ? getAreaTitle(view, streaming, Date.now(), hasResponse)
+    : t('replyProcess')
   const stopped = !streaming && !hasResponse
   return (
     <div className={styles.area}>
       {title ? (
-        <div className={styles.title} onClick={() => setOpen((value) => !value)}>
+        <button
+          type="button"
+          className={styles.title}
+          aria-expanded={open}
+          aria-controls={stepsId}
+          onClick={() => setOpen((value) => !value)}
+        >
           <span className={clsx(styles.titleIcon, stopped && styles.stoppedIcon)}>
             <IconThinkOutline16 />
           </span>
           <span className={clsx(styles.titleText, titleActive && styles.shimmer)}>{title}</span>
           {open ? <IconChevronDownOutline14 /> : <IconChevronRightOutline14 />}
-        </div>
+        </button>
       ) : null}
-      {open || !title ? (
-        <div className={styles.steps}>
-          {view.steps.map((step, index) => (
-            <StepItem
-              key={stepKey(step, index)}
-              step={step}
-              message={message}
-              sources={view.sources}
-              streaming={streaming}
-              isLast={index === view.steps.length - 1}
-            />
-          ))}
-        </div>
-      ) : null}
+      <div id={stepsId} className={styles.steps} hidden={!open}>
+        {view.steps.map((step, index) => (
+          <StepItem
+            key={stepKey(step, index)}
+            step={step}
+            message={message}
+            sources={view.sources}
+            streaming={streaming}
+            isLast={index === view.steps.length - 1}
+          />
+        ))}
+      </div>
     </div>
   )
 })
@@ -242,21 +249,31 @@ const SearchRow = ({
       </>
     )
   }
+  const Row = clickable ? 'button' : 'div'
   return (
-    <div
-      className={clsx(
-        styles.row,
-        !isLast && styles.withLine,
-        clickable && styles.clickable,
-        entry === panelEntry && styles.active
-      )}
-      onClick={clickable ? () => toggleSearchPanel(panelEntry, step.results) : undefined}
-    >
-      <span className={styles.rowIcon}>
-        {failed ? <IconSearchWarningOutline16 /> : <IconSearchOutline16 />}
-      </span>
-      {body}
-    </div>
+    <>
+      <Row
+        {...(clickable ? { type: 'button' as const } : {})}
+        className={clsx(
+          styles.row,
+          !isLast && styles.withLine,
+          clickable && styles.clickable,
+          entry === panelEntry && styles.active
+        )}
+        onClick={clickable ? () => toggleSearchPanel(panelEntry, step.results) : undefined}
+        aria-expanded={clickable ? entry === panelEntry : undefined}
+      >
+        <span className={styles.rowIcon}>
+          {failed ? <IconSearchWarningOutline16 /> : <IconSearchOutline16 />}
+        </span>
+        {body}
+      </Row>
+      {!wip && step.queries.length > 0 ? (
+        <div className={styles.searchQueries}>
+          {t('toolSearchIntro')}：{step.queries.join(' · ')}
+        </div>
+      ) : null}
+    </>
   )
 }
 
