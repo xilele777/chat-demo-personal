@@ -7,6 +7,7 @@ import { connectMcpTools, runMcpTool } from './mcp.js'
 import { McpTools } from './mcpTools.js'
 import { hasOpenAIUsage, mergeOpenAIUsage, openAIUsage } from './usage.js'
 import { OpenAIContent } from './reasoning.js'
+import { readOpenAIEvents, responsesInput } from './openaiResponses.js'
 import type { MessageUsage } from '../src/services/api/types.js'
 import {
   searchCall,
@@ -166,7 +167,7 @@ async function* normalizeOpenAI(
   let ended = false
   let usage: Record<string, unknown> | undefined
   const content = new OpenAIContent()
-  for await (const event of readServerSentEvents(stream, signal)) {
+  for await (const event of readOpenAIEvents(stream, signal)) {
     if (event.data === '[DONE]') {
       ended = true
     }
@@ -310,6 +311,7 @@ async function genericProvider(
     throw new HttpError(503, 'Invalid MAX_OUTPUT_TOKENS')
   }
   const effort = body.reasoning_effort
+  const responses = env.UPSTREAM_PROTOCOL === 'openai' && env.OPENAI_API_STYLE === 'responses'
   if (effort !== undefined && !reasoningEfforts(env).includes(effort as never)) {
     throw new HttpError(422, 'This reasoning effort is not configured for the selected provider')
   }
@@ -318,8 +320,22 @@ async function genericProvider(
     body.messages,
     env
   )
-  const payload: Record<string, unknown> =
-    env.UPSTREAM_PROTOCOL === 'openai'
+  const payload: Record<string, unknown> = responses
+    ? {
+        model: env.UPSTREAM_MODEL,
+        input: responsesInput(history),
+        instructions: body.system,
+        reasoning: { summary: 'detailed', ...(effort ? { effort } : {}) },
+        include: ['reasoning.encrypted_content'],
+        store: false,
+        stream: true,
+        ...extra,
+        max_output_tokens: extra.max_completion_tokens ?? max,
+        ...(Array.isArray(extra.tools)
+          ? { tools: extra.tools.map((tool) => ({ type: 'function', ...tool.function })) }
+          : {}),
+      }
+    : env.UPSTREAM_PROTOCOL === 'openai'
       ? {
           model: env.UPSTREAM_MODEL,
           messages: [{ role: 'system', content: body.system }, ...history],
@@ -337,19 +353,27 @@ async function genericProvider(
           stream: true,
           ...extra,
         }
+  if (responses) {
+    delete payload.max_completion_tokens
+    delete payload.max_tokens
+    delete payload.stream_options
+  }
   const send = () =>
-    fetch(`${base(env)}/${env.UPSTREAM_PROTOCOL === 'openai' ? 'chat/completions' : 'messages'}`, {
-      method: 'POST',
-      headers: headers(env),
-      body: JSON.stringify(payload),
-      signal,
-      redirect: 'manual',
-    })
+    fetch(
+      `${base(env)}/${responses ? 'responses' : env.UPSTREAM_PROTOCOL === 'openai' ? 'chat/completions' : 'messages'}`,
+      {
+        method: 'POST',
+        headers: headers(env),
+        body: JSON.stringify(payload),
+        signal,
+        redirect: 'manual',
+      }
+    )
   let response = await send()
   // Retry only rejected optional compatibility fields; explicit effort and tool requests stay intact.
   for (
     let attempt = 0;
-    env.UPSTREAM_PROTOCOL === 'openai' && response.status === 400 && attempt < 2;
+    env.UPSTREAM_PROTOCOL === 'openai' && !responses && response.status === 400 && attempt < 2;
     attempt++
   ) {
     const error = (await response.clone().text()).slice(0, 4000)
@@ -375,6 +399,7 @@ type Completion = {
   calls: ToolCall[]
   finish: string
   usage?: Record<string, unknown>
+  providerOutput?: Record<string, unknown>[]
 }
 
 const webSearchTool = {
@@ -407,8 +432,9 @@ async function* completionEvents(
     ended = false
   let refused = false
   let usage: Record<string, unknown> | undefined
+  let providerOutput: Record<string, unknown>[] | undefined
   const content = new OpenAIContent()
-  for await (const event of readServerSentEvents(response.body, signal)) {
+  for await (const event of readOpenAIEvents(response.body, signal)) {
     if (event.data === '[DONE]') {
       ended = true
     }
@@ -418,6 +444,9 @@ async function* completionEvents(
     }
     if (chunk.usage) {
       usage = mergeOpenAIUsage(usage, chunk.usage)
+    }
+    if (Array.isArray(chunk.provider_output)) {
+      providerOutput = chunk.provider_output
     }
     const choice = chunk.choices?.[0] ?? (ended ? {} : undefined)
     if (!choice) {
@@ -487,6 +516,7 @@ async function* completionEvents(
     calls: [...calls.values()],
     finish: refused ? 'content_filter' : finish,
     usage,
+    providerOutput,
   }
 }
 
@@ -598,6 +628,7 @@ async function* openAIReply(body: ChatRequest, env: Env, signal: AbortSignal) {
             role: 'assistant',
             content: result.text,
             tool_calls: [tool],
+            provider_output: result.providerOutput,
           },
           { role: 'tool', tool_call_id: tool.id, content: JSON.stringify(toolCatalog.load(input)) }
         )
@@ -613,7 +644,12 @@ async function* openAIReply(body: ChatRequest, env: Env, signal: AbortSignal) {
         }
         const toolResult = yield* runMcpTool(entry, input, env, signal)
         history.push(
-          { role: 'assistant', content: result.text, tool_calls: [tool] },
+          {
+            role: 'assistant',
+            content: result.text,
+            tool_calls: [tool],
+            provider_output: result.providerOutput,
+          },
           { role: 'tool', tool_call_id: tool.id, content: toolResult.text }
         )
         history = limitContext(system, history, env)
@@ -666,7 +702,12 @@ async function* openAIReply(body: ChatRequest, env: Env, signal: AbortSignal) {
         }
       })
       history.push(
-        { role: 'assistant', content: result.text, tool_calls: result.calls },
+        {
+          role: 'assistant',
+          content: result.text,
+          tool_calls: result.calls,
+          provider_output: result.providerOutput,
+        },
         {
           role: 'tool',
           tool_call_id: tool.id,
@@ -734,10 +775,17 @@ async function generateTitle(
   const data = (await response.json()) as {
     choices?: { message?: { content?: unknown } }[]
     content?: { type: string; text?: string }[]
+    output?: { type: string; content?: { type: string; text?: string }[] }[]
   }
   const text =
     env.UPSTREAM_PROTOCOL === 'openai'
-      ? data.choices?.[0]?.message?.content
+      ? env.OPENAI_API_STYLE === 'responses'
+        ? data.output
+            ?.flatMap((item) => item.content ?? [])
+            .filter((part) => part.type === 'output_text')
+            .map((part) => part.text ?? '')
+            .join('')
+        : data.choices?.[0]?.message?.content
       : data.content
           ?.filter((item) => item.type === 'text')
           .map((item) => item.text ?? '')

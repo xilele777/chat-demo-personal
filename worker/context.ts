@@ -58,7 +58,8 @@ export const limitContext = <T extends ContextMessage>(
         sum +
         16 +
         contextCost(message.content) +
-        contextCost(JSON.stringify(message.tool_calls ?? '')),
+        contextCost(JSON.stringify(message.tool_calls ?? '')) +
+        contextCost(JSON.stringify(message.provider_output ?? '')),
       0
     )
   while (cost() > limit) {

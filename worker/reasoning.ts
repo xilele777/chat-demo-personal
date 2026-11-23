@@ -22,6 +22,7 @@ export const reasoningText = (delta: Record<string, unknown> | undefined): strin
   return (
     text(delta.reasoning_content) ||
     text(delta.reasoning) ||
+    text(delta.reasoning_summary) ||
     text(delta.thinking) ||
     text(delta.reasoning_details)
   )

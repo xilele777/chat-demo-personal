@@ -309,6 +309,8 @@ try {
       '--var',
       'UPSTREAM_MODEL:test-model',
       '--var',
+      'OPENAI_API_STYLE:chat_completions',
+      '--var',
       'OPENAI_REASONING_EFFORTS:low,medium,high',
       '--var',
       'TAVILY_API_KEY:smoke-search',

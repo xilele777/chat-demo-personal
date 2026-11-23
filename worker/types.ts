@@ -10,6 +10,7 @@ export interface Env {
   UPSTREAM_BASE_URL: string
   UPSTREAM_MODEL: string
   UPSTREAM_PROTOCOL: Protocol
+  OPENAI_API_STYLE?: 'chat_completions' | 'responses'
   MAX_OUTPUT_TOKENS?: string
   OPENAI_REASONING_EFFORTS?: string
   MAX_INPUT_TOKENS?: string
