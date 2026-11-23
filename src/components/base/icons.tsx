@@ -523,3 +523,9 @@ export const IconToastError16 = () => (
     />
   </svg>
 )
+export const HistorySearchIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="10.5" cy="10.5" r="7" stroke="currentColor" strokeWidth="1.6" />
+    <path d="m16 16 4.5 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+  </svg>
+)

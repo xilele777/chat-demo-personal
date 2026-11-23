@@ -28,6 +28,7 @@ const getUploadRetryId = (messages: Message[], streaming: boolean) => {
     : null
 }
 import styles from './MessageList.module.css'
+import { useHistorySearch } from '../../services/chat/historySearchState.js'
 
 /** 距底部小于该值时视为在底部，流式内容增长时跟随 */
 const STICKY_THRESHOLD = 40
@@ -49,6 +50,7 @@ export const MessageList = ({
   const scrollTopRef = useRef(0)
   const restoreScrollRef = useRef<{ messageId: string; top: number } | null>(null)
   const messages = getVisibleMessages(session)
+  const jump = useHistorySearch((state) => state.jump)
   const [previousVersions, setPreviousVersions] = useState(() =>
     buildMessageVersions(session, new Map())
   )
@@ -60,6 +62,29 @@ export const MessageList = ({
     setPreviousVersions(versions)
   }
   const lastMessageId = messages.at(-1)?.id
+  useLayoutEffect(() => {
+    if (!jump || jump.sessionId !== session.id) {
+      return
+    }
+    const element = contentRef.current?.querySelector<HTMLElement>(
+      `[data-message-id="${CSS.escape(jump.messageId)}"]`
+    )
+    if (!element) {
+      return
+    }
+    stickyRef.current = false
+    element.scrollIntoView({ block: 'center', behavior: 'instant' })
+    element.focus({ preventScroll: true })
+    element.classList.add(styles.searchHit)
+    const timer = setTimeout(() => {
+      element.classList.remove(styles.searchHit)
+      useHistorySearch.setState({ jump: null })
+    }, 3500)
+    return () => {
+      clearTimeout(timer)
+      element.classList.remove(styles.searchHit)
+    }
+  }, [jump, session.id, lastMessageId])
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current
     if (el && stickyRef.current) {
@@ -146,32 +171,39 @@ export const MessageList = ({
       <div ref={isMobile ? undefined : scrollRef} className={styles.container}>
         <div ref={isMobile ? scrollRef : undefined} className={styles.scroll}>
           <div ref={contentRef} className={styles.column}>
-            {messages.map((message, index) =>
-              message.role === 'user' ? (
-                <UserMessage
-                  key={message.id}
-                  sessionId={session.id}
-                  message={message}
-                  retryUploadId={uploadRetryId}
-                  isFirst={index === 0}
-                  isLast={index === lastIndex || index === lastIndex - 1}
-                  busy={streaming}
-                  versions={versions.get(message.id) ?? EMPTY_VERSIONS}
-                  onSelectVersion={selectVersion}
-                />
-              ) : (
-                <AssistantMessage
-                  key={message.id}
-                  sessionId={session.id}
-                  message={message}
-                  isLast={index === lastIndex}
-                  streaming={streaming && index === lastIndex}
-                  busy={streaming}
-                  versions={versions.get(message.id) ?? EMPTY_VERSIONS}
-                  onSelectVersion={selectVersion}
-                />
-              )
-            )}
+            {messages.map((message, index) => (
+              <div
+                key={message.id}
+                data-message-id={message.id}
+                tabIndex={-1}
+                className={styles.messageAnchor}
+              >
+                {message.role === 'user' ? (
+                  <UserMessage
+                    key={message.id}
+                    sessionId={session.id}
+                    message={message}
+                    retryUploadId={uploadRetryId}
+                    isFirst={index === 0}
+                    isLast={index === lastIndex || index === lastIndex - 1}
+                    busy={streaming}
+                    versions={versions.get(message.id) ?? EMPTY_VERSIONS}
+                    onSelectVersion={selectVersion}
+                  />
+                ) : (
+                  <AssistantMessage
+                    key={message.id}
+                    sessionId={session.id}
+                    message={message}
+                    isLast={index === lastIndex}
+                    streaming={streaming && index === lastIndex}
+                    busy={streaming}
+                    versions={versions.get(message.id) ?? EMPTY_VERSIONS}
+                    onSelectVersion={selectVersion}
+                  />
+                )}
+              </div>
+            ))}
           </div>
         </div>
         {footer}

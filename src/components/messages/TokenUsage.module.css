@@ -1,0 +1,20 @@
+.usage {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 16px;
+  width: 100%;
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 1.7;
+  text-align: center;
+}
+.usage > div {
+  display: inline-flex;
+  gap: 6px;
+}
+.usage dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}

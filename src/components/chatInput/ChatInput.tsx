@@ -23,6 +23,7 @@ import {
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import { IconButton } from '../base/IconButton.js'
 import { Tooltip } from '../base/Tooltip.js'
+import { ModelPicker } from './ModelPicker.js'
 import { Select } from '../base/Select.js'
 import { ensureApiKey } from '../settings/settingsDialogState.js'
 import { DragMask, useFileDrop } from './DragMask.js'
@@ -35,6 +36,8 @@ import { Spectrum } from './Spectrum.js'
 import { useTranslate } from '../../i18n/index.js'
 import { cloudMode, useCloud } from '../../services/cloud.js'
 import styles from './ChatInput.module.css'
+import { modelReasoningEfforts } from '../../services/models.js'
+import type { ReasoningEffort } from '../../services/api/types.js'
 
 /** 输入框：自适应高度的文本框 + 文件 + 深度思考与智能搜索开关 + 语音输入 + 发送 / 停止 */
 export const ChatInput = memo(function ChatInput({ sessionId }: { sessionId: string | null }) {
@@ -49,6 +52,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const searchEnabled = !cloudMode || Boolean(capabilities?.search)
   const speechEnabled = !cloudMode || Boolean(capabilities?.speech)
   const draft = useDrafts((state) => state.drafts.get(sessionId) ?? EMPTY_DRAFT)
+  const draftStorageError = useDrafts((state) => state.storageError)
   const { text, attachments } = draft
   const setText = (value: string) => setDraftText(sessionId, value)
   const draftReady = useUploads((state) => prepareDraftMessage(draft, state.tasks) !== null)
@@ -56,7 +60,12 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
     (state) => sessionId !== null && Object.hasOwn(state.streaming, sessionId)
   )
   const reasoningEffort = useSettings((state) => state.reasoningEffort)
-  const effortOptions = capabilities?.reasoningEfforts ?? []
+  const model = useSettings((state) => state.model) || capabilities?.model || ''
+  const effortOptions = modelReasoningEfforts(
+    model,
+    capabilities?.reasoningEfforts,
+    capabilities?.reasoningEffortsAutomatic
+  ) as Exclude<ReasoningEffort, 'auto'>[]
   const selectedEffort = effortOptions.includes(
     reasoningEffort as Exclude<typeof reasoningEffort, 'auto'>
   )
@@ -85,7 +94,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
     const observer = new ResizeObserver(updateLabels)
     observer.observe(toggles)
     return () => observer.disconnect()
-  }, [t])
+  }, [t, model, thinkingEnabled])
 
   const acceptFiles = (files: File[]) => {
     if (files.length === 0 || useChatStore.getState().importingHistory || !ensureApiKey()) {
@@ -174,6 +183,11 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
         }
       }}
     >
+      {draftStorageError ? (
+        <p role="status" className={styles.draftNotice}>
+          {t('draftSaveFailed')}
+        </p>
+      ) : null}
       <DraftAttachments items={attachments} onRetry={retryFile} onRemove={removeFile} />
       <div className={styles.textareaWrapper}>
         <textarea
@@ -214,8 +228,8 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
       </div>
       <div className={styles.functionRow}>
         {/* 深度思考 / 智能搜索开关，tooltip 在按钮上方 */}
-        <div ref={togglesRef} className={styles.toggles}>
-          {cloudMode && capabilities?.protocol === 'openai' ? (
+        <div ref={togglesRef} className={clsx(styles.toggles, cloudMode && styles.withModel)}>
+          {cloudMode && capabilities?.protocol === 'openai' && effortOptions.length > 0 ? (
             <Tooltip content={t('reasoningEffortTooltip')}>
               <Select
                 className={clsx(styles.toggle, styles.reasoningSelector)}
@@ -228,7 +242,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
                 ]}
               />
             </Tooltip>
-          ) : (
+          ) : thinkingEnabled ? (
             <Tooltip
               content={t(thinkingEnabled ? 'deactivatedThinkTooltip' : 'cloudFeatureUnavailable')}
             >
@@ -244,7 +258,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
                 <span className={styles.toggleLabel}>{t('thinkingSwitch')}</span>
               </button>
             </Tooltip>
-          )}
+          ) : null}
           <Tooltip
             content={t(searchEnabled ? 'deactivatedSearchTooltip' : 'searchUnavailableTooltip')}
           >
@@ -260,6 +274,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               <span className={styles.toggleLabel}>{t(cloudMode ? 'webSearch' : 'search')}</span>
             </button>
           </Tooltip>
+          <ModelPicker />
         </div>
         <div className={styles.right}>
           {speechEnabled ? (

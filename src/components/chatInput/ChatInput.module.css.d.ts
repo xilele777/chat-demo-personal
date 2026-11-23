@@ -21,6 +21,13 @@ declare const styles: {
   readonly "right": string;
   readonly "sendButton": string;
   readonly "disabled": string;
+  readonly "previewButton": string;
+  readonly "attachmentFailed": string;
+  readonly "invalidRemove": string;
+  readonly "failedReason": string;
+  readonly "textareaHidden": string;
+  readonly "withModel": string;
+  readonly "draftNotice": string;
 };
 export = styles;
 

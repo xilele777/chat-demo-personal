@@ -1,6 +1,8 @@
 import clsx from 'clsx'
 import { cloudMode, useCloud } from '../../services/cloud.js'
 import { CloudSettings } from './CloudSettings.js'
+import { ModelSettings } from './ModelSettings.js'
+import { McpSettings } from './McpSettings.js'
 import { useRef, useState, type ReactNode } from 'react'
 import {
   IconDarkOutline16,
@@ -54,6 +56,8 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
     icon: <IconSettingsOutline16 />,
   },
   { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },
+  { value: 'models', label: 'modelsSection', icon: <IconSettingsOutline16 /> },
+  { value: 'mcp', label: 'mcpSection', icon: <IconSettingsOutline16 /> },
 ]
 
 const SettingsContent = () => {
@@ -81,13 +85,12 @@ const SettingsContent = () => {
           }
         }}
       >
-        <div role="tablist" className={styles.navigation}>
+        <nav aria-label={t('settings')} className={styles.navigation}>
           {sections.map((item) => (
             <button
               key={item.value}
               type="button"
-              role="tab"
-              aria-selected={section === item.value}
+              aria-current={section === item.value ? 'page' : undefined}
               className={clsx(styles.navItem, section === item.value && styles.navItemActive)}
               onClick={() => setSection(item.value)}
             >
@@ -95,8 +98,8 @@ const SettingsContent = () => {
               {t(item.label)}
             </button>
           ))}
-        </div>
-        <div role="tabpanel" className={styles.content}>
+        </nav>
+        <div className={styles.content}>
           {section === 'general' ? (
             <>
               <ThemeSetting />
@@ -104,7 +107,7 @@ const SettingsContent = () => {
               {speechEnabled ? <TtsVoiceSetting /> : null}
               <LocationSetting />
             </>
-          ) : (
+          ) : section === 'data' ? (
             <>
               {cloudMode ? <CloudSettings /> : <ApiKeyField editor={apiKeyEditor} />}
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
@@ -126,7 +129,13 @@ const SettingsContent = () => {
               />
               {isMobile && !cloudMode ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
             </>
-          )}
+          ) : null}
+          <div hidden={section !== 'models'}>
+            <ModelSettings />
+          </div>
+          <div hidden={section !== 'mcp'}>
+            <McpSettings />
+          </div>
         </div>
       </Modal>
       {historyImport.file ? <ImportConfirm historyImport={historyImport} /> : null}

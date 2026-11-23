@@ -6,9 +6,6 @@ import { IconCloseOutline16 } from './icons.js'
 import { IconButton } from './IconButton.js'
 import styles from './Modal.module.css'
 
-/** 当前打开的弹窗，后打开的在末尾；叠放时 Esc 只关闭最上层 */
-const openModals: object[] = []
-
 /** 遮罩 + 居中卡片，Esc / 点遮罩关闭 */
 export const Modal = ({
   title,
@@ -16,7 +13,9 @@ export const Modal = ({
   footer,
   closable = false,
   className,
+  overlayClassName,
   mainClassName,
+  hideHeading = false,
   onClose,
 }: {
   title: ReactNode
@@ -25,44 +24,55 @@ export const Modal = ({
   /** 标题栏右侧显示关闭按钮 */
   closable?: boolean
   className?: string
+  overlayClassName?: string
   /** 内容区的 class */
   mainClassName?: string
+  hideHeading?: boolean
   onClose: () => void
 }) => {
   const t = useTranslate()
   const titleId = useId()
+  const dialogRef = useRef<HTMLDialogElement>(null)
   const onCloseRef = useRef(onClose)
+  const pressedOutside = useRef(false)
   onCloseRef.current = onClose
   useEffect(() => {
-    const token = {}
-    openModals.push(token)
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && openModals.at(-1) === token) {
-        onCloseRef.current()
-      }
+    const dialog = dialogRef.current
+    if (!dialog) {
+      return
     }
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      openModals.splice(openModals.indexOf(token), 1)
-      document.removeEventListener('keydown', onKeyDown)
-    }
+    dialog.showModal()
+    return () => dialog.close()
   }, [])
 
   return createPortal(
-    <div
-      className={styles.overlay}
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    <dialog
+      ref={dialogRef}
+      {...({ closedby: 'closerequest' } as Record<string, string>)}
+      className={clsx(styles.overlay, overlayClassName)}
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault()
+        onCloseRef.current()
+      }}
+      onPointerDown={(event) => {
+        pressedOutside.current = event.target === event.currentTarget && event.button === 0
+      }}
+      onPointerUp={(event) => {
+        if (pressedOutside.current && event.target === event.currentTarget) {
+          onCloseRef.current()
+        }
+        pressedOutside.current = false
+      }}
+      onPointerCancel={() => {
+        pressedOutside.current = false
+      }}
     >
-      <div
-        className={clsx(styles.content, className)}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-      >
-        <div className={styles.header}>
-          <div id={titleId} className={styles.title}>
+      <div className={clsx(styles.content, className)}>
+        <div className={hideHeading ? styles.hiddenHeader : styles.header}>
+          <h2 id={titleId} className={styles.title}>
             {title}
-          </div>
+          </h2>
           {closable ? (
             <IconButton
               className={styles.close}
@@ -76,7 +86,7 @@ export const Modal = ({
         {children ? <div className={clsx(styles.main, mainClassName)}>{children}</div> : null}
         {footer ? <div className={styles.footer}>{footer}</div> : null}
       </div>
-    </div>,
+    </dialog>,
     document.body
   )
 }

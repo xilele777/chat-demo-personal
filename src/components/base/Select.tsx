@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import { useId, useLayoutEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAnchoredPosition, useDismiss } from './anchored.js'
+import type { Align } from './anchored.js'
 import { IconCheckOutline16, IconChevronDownOutline14 } from './icons.js'
 import styles from './Select.module.css'
 
@@ -19,6 +20,7 @@ export const Select = <T extends string>({
   ariaLabel,
   className,
   disabled = false,
+  align = 'end',
 }: {
   value: T
   options: SelectOption<T>[]
@@ -27,6 +29,7 @@ export const Select = <T extends string>({
   ariaLabel?: string
   className?: string
   disabled?: boolean
+  align?: Align
 }) => {
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
@@ -36,7 +39,7 @@ export const Select = <T extends string>({
   const { anchorRef, floatingRef, position } = useAnchoredPosition<
     HTMLButtonElement,
     HTMLDivElement
-  >(open, { align: 'end', maxHeight: 320, minSpace: 160 })
+  >(open && !disabled, { align, maxHeight: 320, minSpace: 160, measureKey: options.length })
   // Esc 只关菜单，不让外层弹窗一起关闭
   const close = () => {
     if (floatingRef.current?.contains(document.activeElement)) {
@@ -47,6 +50,9 @@ export const Select = <T extends string>({
   useDismiss(open, [anchorRef, floatingRef], close, { captureEscape: true })
 
   const showMenu = (fromEnd = false) => {
+    if (!options.length || disabled) {
+      return
+    }
     const selectedIndex = options.findIndex((option) => option.value === value)
     setActiveIndex(selectedIndex >= 0 ? selectedIndex : fromEnd ? options.length - 1 : 0)
     setOpen(true)
@@ -94,7 +100,7 @@ export const Select = <T extends string>({
               ref={floatingRef}
               id={menuId}
               className={styles.menu}
-              style={position ?? undefined}
+              style={position ?? { visibility: 'hidden' }}
               role="listbox"
               aria-label={ariaLabel}
               onBlur={(event) => {
@@ -140,7 +146,7 @@ export const Select = <T extends string>({
                 </div>
               ))}
             </div>,
-            document.body
+            anchorRef.current?.closest('dialog') ?? document.body
           )
         : null}
     </>

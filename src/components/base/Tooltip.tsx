@@ -62,7 +62,7 @@ export const Tooltip = ({
             >
               {content}
             </div>,
-            document.body
+            anchorRef.current?.closest('dialog') ?? document.body
           )
         : null}
     </>

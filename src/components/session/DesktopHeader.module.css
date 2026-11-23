@@ -1,0 +1,22 @@
+.header {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 12px;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 60px;
+  padding: 12px 18px 0;
+  background: var(--dsw-alias-bg-base);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  max-width: 480px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: var(--dsw-font-s-strong-14);
+  color: var(--dsw-alias-label-primary);
+}

@@ -58,7 +58,7 @@ export const Menu = ({
                 </button>
               ))}
             </div>,
-            document.body
+            anchorRef.current?.closest('dialog') ?? document.body
           )
         : null}
     </>

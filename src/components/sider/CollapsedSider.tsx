@@ -1,4 +1,5 @@
-import { IconPanelLeftOutline16, NewChatIcon } from '../base/icons.js'
+import { IconPanelLeftOutline16, NewChatIcon, HistorySearchIcon } from '../base/icons.js'
+import { openHistorySearch } from '../../services/chat/historySearchState.js'
 import { useTranslate } from '../../i18n/index.js'
 import { setSiderCollapsed } from '../../services/settings.js'
 import { newChat } from '../../services/chat/store.js'
@@ -13,6 +14,13 @@ export const CollapsedSider = () => {
     <div className={styles.collapsed}>
       <ChatGPTBrand />
       <div className={styles.collapsedGroup}>
+        <IconButton
+          size="m"
+          tone="primary"
+          icon={<HistorySearchIcon />}
+          tooltip={t('historySearch')}
+          onClick={openHistorySearch}
+        />
         <IconButton
           size="m"
           tone="primary"

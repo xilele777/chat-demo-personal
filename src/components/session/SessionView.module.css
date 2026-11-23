@@ -5,30 +5,6 @@
   flex-direction: column;
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  height: 60px;
-  padding: 12px 18px 0;
-  box-sizing: border-box;
-  background: var(--dsw-alias-bg-base);
-}
-
-.title {
-  max-width: 480px;
-  padding: 8px 12px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font: var(--dsw-font-s-strong-14);
-  color: var(--dsw-alias-label-primary);
-}
-
-.withCollapsedSider {
-  margin-left: 113px;
-}
-
 .inputContainer {
   position: sticky;
   bottom: 0;
@@ -67,4 +43,36 @@
     margin: 0 auto;
     padding-bottom: env(safe-area-inset-bottom);
   }
+}
+.statusRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 6px 12px;
+  box-sizing: border-box;
+  padding: 6px 4px 0;
+  width: 100%;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  text-align: center;
+}
+.statusRow:empty {
+  padding: 0;
+}
+.statusRow button {
+  margin-left: 8px;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.statusError {
+  color: var(--dsw-alias-state-error-primary);
+}
+.statusRow button:focus-visible {
+  outline: 2px solid var(--dsw-alias-button-primary-fill);
 }

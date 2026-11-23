@@ -1,0 +1,105 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+}
+.description {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary);
+}
+.selection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+.selection > span {
+  flex-shrink: 0;
+}
+.selector.selector {
+  min-width: 0;
+  max-width: 100%;
+  flex-shrink: 1;
+}
+.content > button {
+  align-self: flex-start;
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+.addRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.addRow input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+  color: inherit;
+  font: inherit;
+}
+.addRow button {
+  flex-shrink: 0;
+}
+.custom h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-tertiary);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+.grow {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.row button {
+  flex-shrink: 0;
+}
+.content :is(input, button):focus-visible {
+  outline: 2px solid var(--dsw-alias-button-primary-fill);
+  outline-offset: 2px;
+}
+@media (max-width: 767px) {
+  .selection {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .selector.selector {
+    width: 100%;
+    text-align: start;
+  }
+  .addRow {
+    flex-wrap: wrap;
+  }
+  .addRow input {
+    flex-basis: 100%;
+    height: 44px;
+    font-size: 16px;
+  }
+}

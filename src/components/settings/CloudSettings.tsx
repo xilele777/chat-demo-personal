@@ -24,14 +24,11 @@ export const CloudSettings = () => {
           {t('cloudProvider')}
           {config ? ` · ${config.model} (${config.protocol})` : ''}
         </div>
-        <div className={config?.configured ? styles.description : styles.error}>
-          {t(config?.configured ? 'cloudConfigured' : 'cloudNotConfigured')}
-        </div>
+        {!config?.configured ? <div className={styles.error}>{t('cloudNotConfigured')}</div> : null}
       </div>
       <div className={`${styles.cell} ${styles.row}`}>
         <div className={styles.text}>
           <div className={styles.label}>{t('cloudTitle')}</div>
-          <div className={styles.description}>{t('cloudSyncDescription')}</div>
           {lastSyncedAt ? (
             <div className={styles.description}>
               {t('cloudSynced', { time: new Date(lastSyncedAt).toLocaleTimeString() })}
@@ -57,7 +54,6 @@ export const CloudSettings = () => {
       <div className={`${styles.cell} ${styles.row}`}>
         <div className={styles.text}>
           <div className={styles.label}>{t('cloudSignOut')}</div>
-          <div className={styles.description}>{t('cloudSignOutDescription')}</div>
         </div>
         <Button
           variant="outlined"
@@ -78,7 +74,6 @@ export const CloudSettings = () => {
       <div className={`${styles.cell} ${styles.row}`}>
         <div className={styles.text}>
           <div className={styles.label}>{t('cloudMigrate')}</div>
-          <div className={styles.description}>{t('cloudMigrateDescription')}</div>
           {message ? (
             <div role="status" className={failed ? styles.error : styles.description}>
               {message}

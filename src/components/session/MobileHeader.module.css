@@ -17,3 +17,9 @@
   font: var(--dsw-font-s-strong-14);
   color: var(--dsw-alias-label-primary);
 }
+
+.brand {
+  flex: 1;
+  min-width: 0;
+  padding-left: 12px;
+}

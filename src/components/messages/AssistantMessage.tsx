@@ -23,6 +23,7 @@ import {
   type SelectMessageVersion,
 } from './BranchSwitcher.js'
 import styles from './AssistantMessage.module.css'
+import { McpToolActivity } from './McpToolActivity.js'
 
 const TOP_UP_URL = 'https://platform.deepseek.com/top_up'
 
@@ -58,6 +59,9 @@ export const AssistantMessage = memo(function AssistantMessage({
   const summaryEntry = `${message.id}-summary`
   return (
     <div className={styles.message}>
+      {message.mcpTools?.length ? (
+        <McpToolActivity tools={message.mcpTools} streaming={streaming} />
+      ) : null}
       {refused ? null : (
         <ReplyArea
           message={message}
@@ -82,6 +86,13 @@ export const AssistantMessage = memo(function AssistantMessage({
             <span key={index} className={styles.waitingDot} />
           ))}
         </div>
+      ) : null}
+      {!streaming &&
+      !refused &&
+      answer &&
+      (message.thinking || (message.usage?.reasoning_tokens ?? 0) > 0) &&
+      !message.blocks.some((block) => block.type === 'thinking' && block.thinking.trim()) ? (
+        <p className={styles.reasoningNotice}>{t('reasoningNotReturned')}</p>
       ) : null}
       {notice?.presentation === 'response' ? (
         <Markdown
@@ -125,8 +136,10 @@ export const AssistantMessage = memo(function AssistantMessage({
         </div>
       ) : null}
       {!streaming && !refused && view.searchResults.length > 0 ? (
-        <div
+        <button
+          type="button"
           className={clsx(styles.summary, panelEntry === summaryEntry && styles.summaryActive)}
+          aria-expanded={panelEntry === summaryEntry}
           onClick={() => toggleSearchPanel(summaryEntry, view.searchResults)}
         >
           <SiteThumbnails sources={view.searchResults} />
@@ -136,7 +149,7 @@ export const AssistantMessage = memo(function AssistantMessage({
               { count: view.searchResults.length }
             )}
           </span>
-        </div>
+        </button>
       ) : null}
       {streaming ? null : (
         <div className={styles.bottom}>

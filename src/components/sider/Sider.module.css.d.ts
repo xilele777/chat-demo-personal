@@ -17,6 +17,7 @@ declare const styles: {
   readonly "drawer": string;
   readonly "drawerMask": string;
   readonly "mobile": string;
+  readonly "headerActions": string;
 };
 export = styles;
 

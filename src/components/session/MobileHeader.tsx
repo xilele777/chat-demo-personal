@@ -1,4 +1,5 @@
-import { IconMenuOutline20, IconNewChatOutline20 } from '../base/icons.js'
+import { IconMenuOutline20, IconNewChatOutline20, HistorySearchIcon } from '../base/icons.js'
+import { openHistorySearch } from '../../services/chat/historySearchState.js'
 import { useTranslate } from '../../i18n/index.js'
 import { newChat } from '../../services/chat/store.js'
 import { IconButton } from '../base/IconButton.js'
@@ -19,7 +20,9 @@ export const MobileHeader = ({ title }: { title?: string }) => {
         onClick={openMobileSider}
       />
       {title === undefined ? (
-        <ChatGPTBrand />
+        <span className={styles.brand}>
+          <ChatGPTBrand />
+        </span>
       ) : (
         <>
           <div className={styles.title}>{title}</div>
@@ -32,6 +35,13 @@ export const MobileHeader = ({ title }: { title?: string }) => {
           />
         </>
       )}
+      <IconButton
+        size="xl"
+        tone="primary"
+        icon={<HistorySearchIcon />}
+        aria-label={t('historySearch')}
+        onClick={openHistorySearch}
+      />
     </div>
   )
 }
