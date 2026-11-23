@@ -113,10 +113,18 @@ try {
   }
   await checkComposer()
   const totals = page.locator('[data-session-usage]')
-  await expect(totals.locator('div').filter({ hasText: '输入' }).locator('dd')).toHaveText('100')
-  await expect(totals.locator('div').filter({ hasText: '缓存命中' }).locator('dd')).toHaveText('30')
-  await expect(totals.locator('div').filter({ hasText: '输出' }).locator('dd')).toHaveText('40')
-  await expect(totals.locator('div').filter({ hasText: '思考' }).locator('dd')).toHaveText('20')
+  const metric = (root, label) =>
+    root
+      .locator('dl > div')
+      .filter({ has: page.locator('dt').filter({ hasText: new RegExp(`^${label}$`) }) })
+      .locator('dd')
+  await totals.locator('summary').click()
+  await expect(metric(totals, '输入')).toHaveText('100')
+  await expect(metric(totals, '其中缓存命中')).toHaveText('30')
+  await expect(metric(totals, '输出')).toHaveText('40')
+  await expect(metric(totals, '其中思考')).toHaveText('20')
+  await expect(metric(totals, '缓存命中率')).toHaveText('30%')
+  await expect(metric(totals, '正文与其他输出')).toHaveText('20')
   const totalBox = await totals.boundingBox()
   const composerBox = await totals.locator('..').boundingBox()
   expect(
@@ -124,10 +132,13 @@ try {
   ).toBeLessThan(2)
   expect(totalBox.y).toBeGreaterThan((await composerModel().boundingBox()).y)
   const statsBoxes = await totals
-    .locator('div')
+    .locator('dl > div')
     .evaluateAll((items) => items.map((el) => el.getBoundingClientRect().y))
-  expect(new Set(statsBoxes).size).toBe(1)
+  expect(new Set(statsBoxes).size).toBe(4)
   await page.screenshot({ path: path.join(output, 'conversation-tokens.png') })
+  await page.keyboard.press('Escape')
+  await expect(totals).not.toHaveAttribute('open')
+  await expect(page.locator('.ds-think-content')).toContainText('先检查内容')
   console.log('PASS: model selection persists, token totals display, and sent drafts stay cleared')
 
   let failSaves = true
@@ -241,8 +252,18 @@ try {
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await expect(composerModel()).toHaveText(longModel)
   const checkHeader = async () => {
+    await page.locator('[data-chat-header]').evaluate(async (header) => {
+      await Promise.all(
+        header
+          .getAnimations({ subtree: true })
+          .filter((animation) => animation instanceof CSSTransition)
+          .map((animation) => animation.finished.catch(() => {}))
+      )
+    })
     const layout = await page.locator('[data-chat-header]').evaluate((header) => {
-      const boxes = [...header.children].map((el) => el.getBoundingClientRect())
+      const boxes = [...header.children]
+        .filter((el) => el.getAttribute('aria-hidden') !== 'true')
+        .map((el) => el.getBoundingClientRect())
       const bound = header.getBoundingClientRect()
       return {
         fits: boxes.every(
@@ -282,23 +303,20 @@ try {
   await expect(page.getByText('调用完成', { exact: true })).toBeVisible()
   await expect(page.locator('[data-session-usage]').filter({ hasText: '250 tokens' })).toBeVisible()
   const sessionTotal = page.locator('[data-session-usage]')
-  await expect(sessionTotal.locator('div').filter({ hasText: '输入' }).locator('dd')).toHaveText(
-    '200'
-  )
-  await expect(
-    sessionTotal.locator('div').filter({ hasText: '缓存命中' }).locator('dd')
-  ).toHaveText('30')
-  await expect(sessionTotal.locator('div').filter({ hasText: '输出' }).locator('dd')).toHaveText(
-    '50'
-  )
-  await expect(sessionTotal.locator('div').filter({ hasText: '思考' }).locator('dd')).toHaveText(
-    '20'
-  )
+  await sessionTotal.locator('summary').click()
+  await expect(metric(sessionTotal, '输入')).toHaveText('200')
+  await expect(metric(sessionTotal, '其中缓存命中')).toHaveText('30')
+  await expect(metric(sessionTotal, '输出')).toHaveText('50')
+  await expect(metric(sessionTotal, '其中思考')).toHaveText('20')
   await page.setViewportSize({ width: 390, height: 844 })
   await waitForSaved()
   await page.reload()
   await expect(sessionTotal).toContainText('250 tokens')
   await checkComposer()
+  await sessionTotal.locator('summary').click()
+  const panelBounds = await sessionTotal.locator('section').boundingBox()
+  expect(panelBounds.x).toBeGreaterThanOrEqual(0)
+  expect(panelBounds.x + panelBounds.width).toBeLessThanOrEqual(390)
   await page.screenshot({ path: path.join(output, 'conversation-tokens-mobile.png') })
   await page.setViewportSize({ width: 1366, height: 900 })
   console.log(

@@ -1,4 +1,13 @@
 export const zh = {
+  tokenCacheRate: '缓存命中率',
+  tokenUncached: '未缓存输入',
+  tokenVisibleOutput: '正文与其他输出',
+  tokenReplies: '已统计回答',
+  tokenMissingReplies: '{count} 个回答未返回用量',
+  tokenDetails: '查看用量明细',
+  tokenComposition: 'Token 构成',
+  tokenCacheHelp: '缓存命中率 = 缓存读取 / 输入总量；缓存属于输入，思考属于输出，均不重复累计。',
+  tokenNotReported: '未返回',
   reasoningNotReturned: '接口未返回可展示的思考过程。思考强度控制模型推理，但不保证返回思考文字。',
   remove: '移除',
   draftSaved: '文字草稿已保存在此设备',

@@ -1,6 +1,16 @@
 import type { zh } from './zh.js'
 
 export const en = {
+  tokenCacheRate: 'Cache hit rate',
+  tokenUncached: 'Uncached input',
+  tokenVisibleOutput: 'Text and other output',
+  tokenReplies: 'Reported answers',
+  tokenMissingReplies: '{count} answers did not report usage',
+  tokenDetails: 'View usage details',
+  tokenComposition: 'Token breakdown',
+  tokenCacheHelp:
+    'Cache hit rate = cache reads / total input. Cache is part of input; reasoning is part of output. Neither is counted twice.',
+  tokenNotReported: 'Not reported',
   reasoningNotReturned:
     'The provider did not expose reasoning text. Reasoning effort controls inference but does not guarantee a visible reasoning transcript.',
   remove: 'Remove',
