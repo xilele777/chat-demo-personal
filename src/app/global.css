@@ -52,3 +52,17 @@ body.change-theme *::after {
     overscroll-behavior-y: none;
   }
 }
+.chatgpt-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+  white-space: nowrap;
+}
+
+.chatgpt-brand svg {
+  flex-shrink: 0;
+}

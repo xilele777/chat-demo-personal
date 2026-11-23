@@ -2,6 +2,7 @@ import { IconMenuOutline20, IconNewChatOutline20 } from '../base/icons.js'
 import { useTranslate } from '../../i18n/index.js'
 import { newChat } from '../../services/chat/store.js'
 import { IconButton } from '../base/IconButton.js'
+import { ChatGPTBrand } from '../base/ChatGPTBrand.js'
 import { openMobileSider } from '../sider/mobileSiderState.js'
 import styles from './MobileHeader.module.css'
 
@@ -17,7 +18,9 @@ export const MobileHeader = ({ title }: { title?: string }) => {
         aria-label={t('expandSiderbarButton')}
         onClick={openMobileSider}
       />
-      {title === undefined ? null : (
+      {title === undefined ? (
+        <ChatGPTBrand />
+      ) : (
         <>
           <div className={styles.title}>{title}</div>
           <IconButton
