@@ -11,7 +11,7 @@ A web chat tool that connects to your own API. Use your preferred model service 
 - Search titles and message text from the sidebar icon or Ctrl/Cmd+K; results reveal and focus messages in any branch.
 - Text drafts survive refresh and reopening on the same device; cloud and local drafts are separate.
 - Switch models beside Web search in the composer; discover available IDs or add them in Settings. Conversation token totals appear centered below the composer, alongside input, output, cache and reasoning statistics.
-- Remote MCP connections in Settings: Streamable HTTP, optional Bearer tokens, tool selection, connection testing, and approval before non-read tool calls. Available with OpenAI- and Anthropic-compatible providers.
+- Remote MCP connections in Settings: Streamable HTTP, optional Bearer tokens or OAuth browser sign-in (including official Notion MCP), automatic cloud token refresh, tool selection, connection testing, and approval before non-read tool calls. Available with OpenAI- and Anthropic-compatible providers.
 - Upload, paste, or drag in images and text/code files; preview images in the page and download originals.
 - Optional web search with visible progress, sources, and citations. In OpenAI-compatible mode, the model decides whether to search based on the conversation.
 - Configurable reasoning effort for supported models; display reasoning text actually returned by the API.

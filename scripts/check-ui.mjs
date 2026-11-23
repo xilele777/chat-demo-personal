@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 const origin = process.env.UI_ORIGIN ?? 'http://127.0.0.1:8788'
+const mockOrigin = `http://127.0.0.1:${process.env.UI_MODEL_PORT ?? 9899}`
 if (!['127.0.0.1', 'localhost'].includes(new URL(origin).hostname)) {
   throw new Error('UI checks must run against the temporary local mock server')
 }
@@ -37,8 +38,8 @@ try {
   )
   const oldConnections = (await (await context.request.get(`${origin}/api/mcp/servers`)).json())
     .servers
-  for (const connection of oldConnections.filter(
-    (connection) => connection.name === 'UI 测试 MCP'
+  for (const connection of oldConnections.filter((connection) =>
+    connection.name.startsWith('UI 测试')
   )) {
     await context.request.delete(`${origin}/api/mcp/servers/${connection.id}`)
   }
@@ -214,7 +215,7 @@ try {
   await page.getByRole('button', { name: 'MCP', exact: true }).click()
   await page.getByRole('button', { name: '添加 MCP 连接', exact: true }).click()
   await page.getByLabel('连接名称', { exact: true }).fill('UI 测试 MCP')
-  await page.getByLabel('远程服务地址', { exact: true }).fill('http://127.0.0.1:9899/mcp')
+  await page.getByLabel('远程服务地址', { exact: true }).fill(`${mockOrigin}/mcp`)
   await page.getByLabel('Bearer Token（可选）', { exact: true }).fill('smoke-mcp')
   await page.getByRole('button', { name: '测试连接', exact: true }).click()
   await expect(
@@ -223,6 +224,20 @@ try {
   await page.screenshot({ path: path.join(output, 'mcp-desktop.png') })
   await page.getByRole('button', { name: '保存连接', exact: true }).click()
   await expect(page.getByText('2 个工具已启用', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '添加 MCP 连接', exact: true }).click()
+  await page.getByLabel('连接名称', { exact: true }).fill('UI 测试 OAuth')
+  await page.getByLabel('远程服务地址', { exact: true }).fill(`${mockOrigin}/oauth/mcp`)
+  await page.getByRole('radio', { name: 'OAuth 浏览器登录', exact: true }).check()
+  await page.getByRole('button', { name: '登录授权', exact: true }).click()
+  await expect(page.getByText('OAuth 授权成功，连接已保存。', { exact: true })).toBeVisible()
+  await expect(page.getByText('已通过 OAuth 登录', { exact: true })).toBeVisible()
+  await expect(page).not.toHaveURL(/mcp_oauth|code=|state=/)
+  await page.screenshot({ path: path.join(output, 'mcp-oauth-desktop.png') })
+  await page
+    .getByRole('region', { name: 'UI 测试 OAuth', exact: true })
+    .getByRole('button', { name: '移除', exact: true })
+    .click()
+  await expect(page.getByRole('region', { name: 'UI 测试 OAuth', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await expect(composerModel()).toHaveText(longModel)
   const checkHeader = async () => {

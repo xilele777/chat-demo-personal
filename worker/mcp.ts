@@ -3,14 +3,27 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import { HttpError, json, validId, type Env } from './types.js'
 import type { McpServer, McpToolBlock } from '../src/services/mcpTypes.js'
+import { validateMcpUrl } from './mcpNet.js'
+import {
+  beginAuthorization,
+  finishAuthorization,
+  oauthAccessToken,
+  oauthRequired,
+  oauthStatus,
+} from './mcpOAuth.js'
+import { authorize } from './auth.js'
 
-type StoredServer = Omit<McpServer, 'hasToken' | 'tools'> & { token: string; tools: Tool[] }
+export type StoredServer = Omit<McpServer, 'hasToken' | 'tools' | 'oauthStatus'> & {
+  token: string
+  tools: Tool[]
+}
 const publicServer = (server: StoredServer): McpServer => ({
   id: server.id,
   name: server.name,
   url: server.url,
   enabled: server.enabled,
   hasToken: Boolean(server.token),
+  authType: server.authType ?? 'bearer',
   disabledTools: server.disabledTools,
   tools: server.tools.map((tool) => ({
     name: tool.name,
@@ -19,56 +32,25 @@ const publicServer = (server: StoredServer): McpServer => ({
   })),
 })
 
-export const validateMcpUrl = (value: string, env: Env): URL => {
-  let url: URL
-  try {
-    url = new URL(value)
-  } catch {
-    throw new HttpError(400, 'Invalid MCP URL')
-  }
-  const host = url.hostname.toLowerCase()
-  const localTest = env.DEV_AUTH === 'true' && ['127.0.0.1', 'localhost'].includes(host)
-  const ip = host.split('.').map(Number)
-  const privateHost =
-    host === 'localhost' ||
-    host.endsWith('.localhost') ||
-    host.endsWith('.local') ||
-    !host.includes('.') ||
-    host.includes(':') ||
-    (ip.length === 4 &&
-      ip.every(Number.isInteger) &&
-      (ip[0] === 0 ||
-        ip[0] === 10 ||
-        ip[0] === 127 ||
-        ip[0] >= 224 ||
-        (ip[0] === 169 && ip[1] === 254) ||
-        (ip[0] === 172 && ip[1] >= 16 && ip[1] <= 31) ||
-        (ip[0] === 192 && ip[1] === 168) ||
-        (ip[0] === 100 && ip[1] >= 64 && ip[1] <= 127)))
-  if (
-    url.username ||
-    url.password ||
-    url.hash ||
-    (!localTest && (url.protocol !== 'https:' || privateHost))
-  ) {
-    throw new HttpError(
-      400,
-      'Use a public HTTPS MCP endpoint without credentials or a fragment in its URL'
-    )
-  }
-  return url
-}
-
 const errorMessage = (error: unknown, server: StoredServer) => {
+  if (server.authType === 'oauth') {
+    return error instanceof HttpError
+      ? error.message
+      : 'MCP OAuth request failed. Check the connection or sign in again.'
+  }
   const message = error instanceof Error ? error.message : 'MCP request failed'
   return (server.token ? message.replaceAll(server.token, '[redacted]') : message).slice(0, 500)
 }
 
-async function connect(server: StoredServer, env: Env, signal: AbortSignal) {
+async function connect(
+  server: StoredServer,
+  env: Env,
+  signal: AbortSignal,
+  tokenOverride?: string
+) {
   const url = validateMcpUrl(server.url, env)
   const client = new Client({ name: 'personal-chat', version: '0.1.3' }, { capabilities: {} })
   const transport = new StreamableHTTPClientTransport(url, {
-    requestInit: { headers: server.token ? { Authorization: `Bearer ${server.token}` } : {} },
     reconnectionOptions: {
       maxRetries: 0,
       initialReconnectionDelay: 1000,
@@ -76,15 +58,40 @@ async function connect(server: StoredServer, env: Env, signal: AbortSignal) {
       reconnectionDelayGrowFactor: 1,
     },
     fetch: async (input, init) => {
-      const response = await fetch(input, {
-        ...init,
-        redirect: 'manual',
-        signal: AbortSignal.any([
-          signal,
-          ...(init?.signal ? [init.signal] : []),
-          AbortSignal.timeout(30_000),
-        ]),
-      })
+      let token =
+        tokenOverride ??
+        (server.authType === 'oauth' ? await oauthAccessToken(env, server) : server.token)
+      const send = () => {
+        const headers = new Headers(init?.headers)
+        if (token) {
+          headers.set('Authorization', `Bearer ${token}`)
+        }
+        return fetch(input, {
+          ...init,
+          headers,
+          redirect: 'manual',
+          signal: AbortSignal.any([
+            signal,
+            ...(init?.signal ? [init.signal] : []),
+            AbortSignal.timeout(30_000),
+          ]),
+        })
+      }
+      let response = await send()
+      if (response.status === 401 && server.authType === 'oauth' && tokenOverride === undefined) {
+        await response.body?.cancel()
+        token = await oauthAccessToken(env, server, token)
+        response = await send()
+        if (response.status === 401) {
+          await response.body?.cancel()
+          await env.DB.prepare(
+            "UPDATE mcp_oauth SET tokens = NULL WHERE server_id = ? AND json_extract(tokens, '$.access_token') = ?"
+          )
+            .bind(server.id, token)
+            .run()
+          throw oauthRequired()
+        }
+      }
       if (response.status >= 300 && response.status < 400) {
         throw new HttpError(502, 'MCP redirects are not allowed. Use the final endpoint URL.')
       }
@@ -96,6 +103,11 @@ async function connect(server: StoredServer, env: Env, signal: AbortSignal) {
     return client
   } catch (error) {
     await client.close().catch(() => {})
+    if (server.authType === 'oauth') {
+      throw error instanceof HttpError
+        ? error
+        : new HttpError(502, 'MCP OAuth connection failed. Try signing in again.')
+    }
     throw new HttpError(502, errorMessage(error, server))
   }
 }
@@ -129,7 +141,14 @@ export async function mcpRoutes(
   path: string
 ): Promise<Response | null> {
   if (path === '/api/mcp/servers' && request.method === 'GET') {
-    return json({ servers: (await readServers(env)).map(publicServer) })
+    return json({
+      servers: await Promise.all(
+        (await readServers(env)).map(async (server) => ({
+          ...publicServer(server),
+          oauthStatus: await oauthStatus(env, server),
+        }))
+      ),
+    })
   }
   const approval = path.match(/^\/api\/mcp\/approvals\/([a-zA-Z0-9_-]+)$/)
   if (approval && request.method === 'POST') {
@@ -147,7 +166,7 @@ export async function mcpRoutes(
     }
     return json({ ok: true })
   }
-  const route = path.match(/^\/api\/mcp\/servers\/([a-zA-Z0-9_-]+)(\/test)?$/)
+  const route = path.match(/^\/api\/mcp\/servers\/([a-zA-Z0-9_-]+)(\/(?:test|authorize))?$/)
   if (!route) {
     return null
   }
@@ -157,10 +176,13 @@ export async function mcpRoutes(
   }
   const old = (await readServers(env)).find((server) => server.id === id)
   if (request.method === 'DELETE' && !route[2]) {
-    await env.DB.prepare('DELETE FROM mcp_servers WHERE id = ?').bind(id).run()
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM mcp_oauth_flows WHERE server_id = ?').bind(id),
+      env.DB.prepare('DELETE FROM mcp_servers WHERE id = ?').bind(id),
+    ])
     return json({ ok: true })
   }
-  if (request.method !== 'PUT' && !(request.method === 'POST' && route[2])) {
+  if (!(request.method === 'PUT' && !route[2]) && !(request.method === 'POST' && route[2])) {
     return null
   }
   if (!request.headers.get('Content-Type')?.includes('application/json')) {
@@ -174,6 +196,7 @@ export async function mcpRoutes(
     typeof body.url !== 'string' ||
     body.url.length > 2048 ||
     typeof body.enabled !== 'boolean' ||
+    (body.authType !== undefined && !['bearer', 'oauth'].includes(body.authType)) ||
     (body.token !== undefined &&
       (typeof body.token !== 'string' || body.token.length > 4096 || /[\r\n]/.test(body.token))) ||
     !Array.isArray(body.disabledTools) ||
@@ -191,6 +214,7 @@ export async function mcpRoutes(
     name: body.name.trim(),
     url: validateMcpUrl(body.url, env).href,
     enabled: body.enabled,
+    authType: body.authType ?? old?.authType ?? 'bearer',
     token:
       body.token === undefined
         ? old?.url === validateMcpUrl(body.url, env).href
@@ -199,6 +223,31 @@ export async function mcpRoutes(
         : body.token.trim(),
     disabledTools: body.disabledTools,
     tools: old?.tools ?? [],
+  }
+  if (server.authType === 'oauth') {
+    server.token = ''
+  }
+  if (old?.url !== server.url || (old?.authType ?? 'bearer') !== server.authType) {
+    server.tools = []
+  }
+  if (route[2] === '/authorize') {
+    if (server.authType !== 'oauth') {
+      throw new HttpError(400, 'Select OAuth to sign in')
+    }
+    try {
+      return json({
+        authorizationUrl: await beginAuthorization(
+          server,
+          request,
+          env,
+          old ? JSON.stringify(old) : null
+        ),
+      })
+    } catch (error) {
+      throw error instanceof HttpError
+        ? error
+        : new HttpError(502, 'Could not start MCP OAuth sign-in. Check the server and try again.')
+    }
   }
   // Always discover capabilities before saving an enabled connection. Failed edits preserve the old settings.
   if (route[2] || server.enabled) {
@@ -214,13 +263,72 @@ export async function mcpRoutes(
     server.tools = []
   }
   if (!route[2]) {
-    await env.DB.prepare(
-      'INSERT INTO mcp_servers (id, data) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data'
-    )
-      .bind(id, JSON.stringify(server))
-      .run()
+    await env.DB.batch([
+      env.DB.prepare(
+        'INSERT INTO mcp_servers (id, data) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data'
+      ).bind(id, JSON.stringify(server)),
+      ...(old && (old.url !== server.url || server.authType !== 'oauth')
+        ? [
+            env.DB.prepare('DELETE FROM mcp_oauth WHERE server_id = ?').bind(id),
+            env.DB.prepare('DELETE FROM mcp_oauth_flows WHERE server_id = ?').bind(id),
+          ]
+        : []),
+    ])
   }
   return json({ server: publicServer(server) })
+}
+
+// Top-level browser navigation may arrive cross-site; the owner session and one-time state
+// authorize this callback. Keep the ordinary API origin checks intact.
+export async function mcpOAuthCallback(request: Request, env: Env): Promise<Response> {
+  let result = 'failed'
+  try {
+    await authorize(request, env)
+    const flow = await finishAuthorization(request, env)
+    const client = await connect(flow.server, env, request.signal, flow.tokens.access_token)
+    try {
+      flow.server.tools = await listTools(client, request.signal)
+    } finally {
+      await client.close().catch(() => {})
+    }
+    const data = JSON.stringify(flow.server)
+    const saved = await env.DB.batch([
+      env.DB.prepare(`INSERT INTO mcp_servers (id, data) SELECT ?, ?
+        WHERE (? IS NULL AND NOT EXISTS (SELECT 1 FROM mcp_servers WHERE id = ?) AND (SELECT COUNT(*) FROM mcp_servers) < 5)
+          OR EXISTS (SELECT 1 FROM mcp_servers WHERE id = ? AND data = ?)
+        ON CONFLICT(id) DO UPDATE SET data = excluded.data`).bind(
+        flow.server.id,
+        data,
+        flow.previous,
+        flow.server.id,
+        flow.server.id,
+        flow.previous
+      ),
+      env.DB.prepare(`INSERT INTO mcp_oauth (server_id, config, tokens)
+        SELECT ?, ?, ? WHERE changes() > 0 AND EXISTS (SELECT 1 FROM mcp_servers WHERE id = ? AND data = ?)
+        ON CONFLICT(server_id) DO UPDATE SET config = excluded.config, tokens = excluded.tokens, lock_id = NULL, lock_until = 0`).bind(
+        flow.server.id,
+        JSON.stringify(flow.config),
+        JSON.stringify(flow.tokens),
+        flow.server.id,
+        data
+      ),
+    ])
+    if (saved[0].meta.changes && saved[1].meta.changes) {
+      result = 'connected'
+    }
+  } catch {
+    // Callback parameters and token endpoint errors must never be reflected into HTML or URLs.
+  }
+  return new Response(null, {
+    status: 303,
+    headers: {
+      Location: `/?mcp_oauth=${result}`,
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  })
 }
 
 export type ConnectedMcpTool = { alias: string; server: StoredServer; tool: Tool; client: Client }

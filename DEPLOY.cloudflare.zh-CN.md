@@ -72,7 +72,7 @@ OpenAI 推理模型在等待返回时显示“正在思考”；兼容 `reasonin
 
 “设置 → MCP”可管理最多五个远程 **Streamable HTTP** 连接，填写名称、公共 HTTPS 地址和可选 Bearer Token，测试连接后选择要启用的工具。Token 保存在 D1，不回传或写入浏览器 localStorage；更换服务地址时需重新填写 Token。MCP 配置不包含在历史 ZIP 备份中。
 
-模型会按需调用已启用工具。服务声明 `readOnlyHint: true` 的工具可直接调用，请只启用信任的服务；其他工具会在对话中显示名称和参数，选择“允许这次调用”后执行。“拒绝”、停止生成或确认过期后不会执行该次待确认调用。工具调用数量、连接超时与输出长度均有限制。当前支持 OpenAI / Anthropic 兼容协议；暂不支持 DeepSeek 扩展协议的 MCP、本机 stdio、旧版 SSE 或 OAuth 登录。
+模型会按需调用已启用工具。服务声明 `readOnlyHint: true` 的工具可直接调用，请只启用信任的服务；其他工具会在对话中显示名称和参数，选择“允许这次调用”后执行。“拒绝”、停止生成或确认过期后不会执行该次待确认调用。工具调用数量、连接超时与输出长度均有限制。当前支持 OpenAI / Anthropic 兼容协议，以及 Bearer Token / OAuth 登录；暂不支持 DeepSeek 扩展协议的 MCP、本机 stdio 或旧版 SSE。Notion OAuth 连接方式见第 7 节。
 
 已有部署升级时，先执行 `pnpm db:remote`，应用包含 `0003_mcp.sql` 的数据库迁移，再执行 `pnpm deploy:cloud`。本地运行则使用 `pnpm db:local`。新增表只保存 MCP 配置和临时确认记录，不替换历史数据。
 
@@ -168,6 +168,16 @@ pnpm exec wrangler secret put UPSTREAM_API_KEY
 - **来自 GitHub Pages、localhost 或另一域名**：先在旧页面导出 ZIP，再到新站导入。导入会覆盖现有云端历史，先下载备份。
 - 原 ZIP 不含非图片附件原件；这些附件需要重新添加。不要将云端副本误认为旧站点数据已经自动迁移。
 
+## 7. 连接 Notion 等 OAuth MCP 服务
+
+更新已有部署时，先执行 `pnpm db:remote` 应用 `0004_mcp_oauth.sql`，再执行 `pnpm deploy:cloud`。本地开发使用 `pnpm db:local`。OAuth 注册信息、访问令牌和刷新令牌保存在 D1，不回传浏览器，也不写入本机设置。
+
+在“设置 → MCP → 添加 MCP 连接”填写名称与 `https://mcp.notion.com/mcp`，选择“OAuth 浏览器登录”，点击“登录授权”。浏览器会前往 Notion；完成授权后返回本站，自动保存连接并发现工具。回调地址为本站 origin 加 `/mcp/oauth/callback`，必须使用稳定的公网 HTTPS 域名；更换域名后需要重新授权。回调使用当前浏览器的访问密码会话，请在原浏览器中完成授权。
+
+Notion 官方 MCP 的 OAuth 连接适用于所有套餐，无需购买静态 MCP Token；具体工具仍受 Notion 套餐和工作区权限限制。参考：[连接指南](https://developers.notion.com/guides/mcp/get-started-with-mcp)及[客户端开发指南](https://developers.notion.com/guides/mcp/build-mcp-client)。
+
+访问令牌临近过期或被服务拒绝时自动刷新；D1 锁保证同一连接的刷新串行执行。服务返回 `invalid_grant` 等终止授权错误时，设置页显示“需要登录授权”；点击“重新授权”恢复。暂时的网络或服务故障保留凭据，可稍后重试。取消授权或回调失败保留原连接；删除连接同时清除凭据和待完成授权。OAuth 服务需支持自动发现、PKCE S256 和动态客户端注册；本机 stdio 与旧版 SSE 暂不支持。
+
 ## 验证
 
 ```powershell
@@ -178,7 +188,9 @@ pnpm build:cloud
 pnpm test:cloud
 ```
 
-`test:cloud` 只执行关键集成路径：真实本地 D1/R2 上的版本冲突、原子历史替换和删除、附件字节往返、模拟 OpenAI 流式转换，以及基本访问边界。它使用临时数据库和模拟 API，不调用收费模型、不接触线上数据。默认使用本机 8788 和 9899 端口。
+`test:cloud` 验证真实本地 D1/R2 上的版本冲突、原子历史替换和删除、附件字节往返、模拟 OpenAI 流式转换、MCP 读写确认及 OAuth 全流程（PKCE、单次回调、并发刷新、临时故障、授权撤销和配置变更）。它使用临时数据库和模拟 API，不调用收费模型、不接触线上数据。默认使用本机 8788 和 9899 端口，可用 `SMOKE_WORKER_PORT` / `SMOKE_MODEL_PORT` 环境变量改端口。
+
+浏览器回归：先运行 `node --import tsx scripts/smoke-cloud.mjs --serve`，另一个终端运行 `pnpm test:ui`。自定义端口时同时设置 `UI_ORIGIN` 和 `UI_MODEL_PORT`。其中 OAuth 检查使用模拟服务；真实 Notion 工作区的最终授权需用户在浏览器中登录完成。
 
 人工浏览器验证包括密码登录、刷新后保持登录、退出、桌面与手机布局；此前还验证了聊天和独立浏览器会话读取同一云端记录。真实中转站需要在选定服务后再验证。
 

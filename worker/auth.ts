@@ -9,6 +9,16 @@ const localRequest = (request: Request) =>
 const configured = (env: Env) => Boolean(env.APP_PASSWORD && env.APP_PASSWORD.length >= 12)
 const cookieName = (request: Request) =>
   new URL(request.url).protocol === 'https:' ? '__Host-personal-chat' : 'personal_chat_local'
+export async function sessionBinding(request: Request) {
+  const cookie =
+    request.headers
+      .get('Cookie')
+      ?.split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${cookieName(request)}=`)) ?? ''
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(cookie)))
+  return [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
 const key = async (env: Env) =>
   new Uint8Array(
     await crypto.subtle.digest(

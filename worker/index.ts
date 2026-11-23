@@ -3,15 +3,19 @@ import { storage } from './storage.js'
 import { upstream } from './upstream.js'
 import { publicConfig } from './config.js'
 import { HttpError, json, type Env } from './types.js'
-import { mcpRoutes } from './mcp.js'
+import { mcpRoutes, mcpOAuthCallback } from './mcp.js'
 
 // Wrangler's module entry point requires a default export.
 // eslint-disable-next-line import/no-default-export
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    env = { ...env, waitUntil: ctx.waitUntil.bind(ctx) }
     try {
       const url = new URL(request.url)
       const path = url.pathname
+      if (path === '/mcp/oauth/callback' && request.method === 'GET') {
+        return mcpOAuthCallback(request, env)
+      }
       if (path.startsWith('/api/')) {
         const origin = request.headers.get('Origin')
         if (

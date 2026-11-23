@@ -51,6 +51,18 @@ export const en = {
   tokenSessionHelp:
     'Includes reported usage for all answer versions and continuations. Requests without usage and automatic title generation are excluded.',
   mcpSection: 'MCP',
+  mcpAuthType: 'Authentication',
+  mcpAuthBearer: 'Bearer token / No authentication',
+  mcpAuthOAuth: 'OAuth browser sign-in',
+  mcpOAuthSignIn: 'Sign in with OAuth',
+  mcpOAuthReauthorize: 'Reauthorize',
+  mcpOAuthAuthorized: 'Signed in with OAuth',
+  mcpOAuthRequired: 'OAuth sign-in required. Reconnect this server.',
+  mcpOAuthSuccess: 'OAuth authorization succeeded. Connection saved.',
+  mcpOAuthFailed:
+    'OAuth authorization was not completed or has expired. Open the connection editor and sign in again.',
+  mcpOAuthHelp:
+    'For OAuth services such as Notion. Sign in on the service website; the connection is saved when you return. Credentials are stored in the cloud and refreshed automatically. Notion endpoint: https://mcp.notion.com/mcp.',
   mcpCloudOnly: 'MCP connections are available in personal cloud mode.',
   mcpDescription:
     'Connect remote Streamable HTTP services to expose enabled tools to the model. Read tools run directly; other tools require approval in the conversation.',
@@ -71,7 +83,7 @@ export const en = {
   mcpTokenStored: 'Saved; leave untouched to keep existing token',
   mcpTokenOptional: 'Leave empty if authentication is not required',
   mcpTokenHelp:
-    'Stored in the cloud, never in local settings or returned to the browser. Edit then clear to remove a saved token. Local stdio, legacy SSE, and OAuth sign-in are not supported yet.',
+    'Stored in the cloud, never in local settings or returned to the browser. Edit then clear to remove a saved token. Local stdio and legacy SSE are not supported yet.',
   mcpEnableConnection: 'Enable this connection in conversations',
   mcpTools: 'Available tools',
   mcpReadOnly: 'Read tool',

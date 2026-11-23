@@ -1,6 +1,8 @@
 export type Protocol = 'deepseek' | 'anthropic' | 'openai'
 
 export interface Env {
+  /** Request runtime hook, attached by the Worker entry point rather than a binding. */
+  waitUntil?: (promise: Promise<unknown>) => void
   ASSETS: Fetcher
   DB: D1Database
   FILES: R2Bucket

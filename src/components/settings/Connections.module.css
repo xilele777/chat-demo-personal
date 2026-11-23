@@ -8,7 +8,7 @@
   color: var(--dsw-alias-label-primary);
   font-size: 14px;
 }
-.stack :is(input:not([type='checkbox']), select) {
+.stack :is(input:not([type='checkbox']):not([type='radio']), select) {
   box-sizing: border-box;
   inline-size: 100%;
   min-inline-size: 0;
@@ -67,6 +67,12 @@
   block-size: 18px;
   accent-color: var(--dsw-alias-button-primary-fill);
   flex-shrink: 0;
+}
+@media (pointer: coarse) {
+  .check,
+  .stack :is(input:not([type='checkbox']):not([type='radio']), select, button) {
+    min-block-size: 48px;
+  }
 }
 .tools {
   border: none;

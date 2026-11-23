@@ -5,6 +5,8 @@ export type McpServer = {
   url: string
   enabled: boolean
   hasToken: boolean
+  authType?: 'bearer' | 'oauth'
+  oauthStatus?: 'authorized' | 'required'
   tools: McpTool[]
   disabledTools: string[]
 }

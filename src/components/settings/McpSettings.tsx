@@ -5,11 +5,25 @@ import type { McpServer } from '../../services/mcpTypes.js'
 import { createId } from '../../utils/id.js'
 import { Button } from '../base/Button.js'
 import styles from './Connections.module.css'
+import { useSettingsDialog } from './settingsDialogState.js'
 
 type Editor = McpServer & { token?: string }
+const redirectToOAuth = async (server: Editor) => {
+  const response = await cloudFetch(
+    `/mcp/servers/${server.id}/authorize`,
+    cloudJson('POST', server)
+  )
+  const result = (await response.json()) as { authorizationUrl: string }
+  const url = new URL(result.authorizationUrl)
+  if (!['https:', 'http:'].includes(url.protocol)) {
+    throw new Error('Invalid authorization URL')
+  }
+  location.assign(url.href)
+}
 export const McpSettings = () => {
   const t = useTranslate()
   const supported = useCloud((state) => state.config?.mcp)
+  const oauthResult = useSettingsDialog((state) => state.oauthResult)
   const [servers, setServers] = useState<McpServer[]>([])
   const [editor, setEditor] = useState<Editor | null>(null)
   const [busy, setBusy] = useState(false)
@@ -46,6 +60,12 @@ export const McpSettings = () => {
   return (
     <div className={styles.stack}>
       {!supported ? <p className={styles.description}>{t('mcpProtocolUnavailable')}</p> : null}
+      {oauthResult === 'connected' ? <p role="status">{t('mcpOAuthSuccess')}</p> : null}
+      {oauthResult === 'failed' ? (
+        <p role="alert" className={styles.error}>
+          {t('mcpOAuthFailed')}
+        </p>
+      ) : null}
       {error ? (
         <p role="alert" className={styles.error}>
           {error}
@@ -66,6 +86,11 @@ export const McpSettings = () => {
             <span>{t(server.enabled ? 'mcpEnabled' : 'mcpDisabled')}</span>
           </div>
           <p className={styles.description}>{server.url}</p>
+          {server.authType === 'oauth' ? (
+            <p className={server.oauthStatus === 'required' ? styles.error : styles.description}>
+              {t(server.oauthStatus === 'authorized' ? 'mcpOAuthAuthorized' : 'mcpOAuthRequired')}
+            </p>
+          ) : null}
           <p className={styles.description}>
             {t('mcpToolCount', {
               count: server.tools.filter((tool) => !server.disabledTools.includes(tool.name))
@@ -73,6 +98,23 @@ export const McpSettings = () => {
             })}
           </p>
           <div className={styles.row}>
+            {server.authType === 'oauth' ? (
+              <Button
+                variant="outlined"
+                size="s"
+                disabled={busy || Boolean(editor)}
+                onClick={() => {
+                  setBusy(true)
+                  setError('')
+                  void redirectToOAuth(server).catch((error: Error) => {
+                    setError(error.message)
+                    setBusy(false)
+                  })
+                }}
+              >
+                {t(server.oauthStatus === 'authorized' ? 'mcpOAuthReauthorize' : 'mcpOAuthSignIn')}
+              </Button>
+            ) : null}
             <Button
               variant="outlined"
               size="s"
@@ -131,6 +173,7 @@ export const McpSettings = () => {
               url: '',
               enabled: true,
               hasToken: false,
+              authType: 'bearer',
               tools: [],
               disabledTools: [],
             })
@@ -189,6 +232,19 @@ const McpEditor = ({
       setBusy(false)
     }
   }
+  const signIn = async () => {
+    if (busy || !form.current?.reportValidity()) {
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      await redirectToOAuth(value)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error))
+      setBusy(false)
+    }
+  }
   return (
     <form
       ref={form}
@@ -231,22 +287,41 @@ const McpEditor = ({
         spellCheck={false}
         aria-describedby={`${id}-help`}
       />
-      <label htmlFor={`${id}-token`}>{t('mcpToken')}</label>
-      <input
-        id={`${id}-token`}
-        name="token"
-        type="password"
-        autoComplete="new-password"
-        maxLength={4096}
-        value={value.token ?? ''}
-        onChange={(event) => update({ token: event.target.value })}
-        placeholder={t(
-          value.hasToken && value.token === undefined ? 'mcpTokenStored' : 'mcpTokenOptional'
-        )}
-        aria-describedby={`${id}-help`}
-      />
+      <fieldset className={styles.tools}>
+        <legend>{t('mcpAuthType')}</legend>
+        {(['bearer', 'oauth'] as const).map((authType) => (
+          <label key={authType} className={styles.check}>
+            <input
+              type="radio"
+              name="authType"
+              value={authType}
+              checked={(value.authType ?? 'bearer') === authType}
+              onChange={() => update({ authType, tools: [] })}
+            />
+            {t(authType === 'oauth' ? 'mcpAuthOAuth' : 'mcpAuthBearer')}
+          </label>
+        ))}
+      </fieldset>
+      {value.authType !== 'oauth' ? (
+        <>
+          <label htmlFor={`${id}-token`}>{t('mcpToken')}</label>
+          <input
+            id={`${id}-token`}
+            name="token"
+            type="password"
+            autoComplete="new-password"
+            maxLength={4096}
+            value={value.token ?? ''}
+            onChange={(event) => update({ token: event.target.value })}
+            placeholder={t(
+              value.hasToken && value.token === undefined ? 'mcpTokenStored' : 'mcpTokenOptional'
+            )}
+            aria-describedby={`${id}-help`}
+          />
+        </>
+      ) : null}
       <p id={`${id}-help`} className={styles.description}>
-        {t('mcpTokenHelp')}
+        {t(value.authType === 'oauth' ? 'mcpOAuthHelp' : 'mcpTokenHelp')}
       </p>
       <label className={styles.check}>
         <input
@@ -293,13 +368,24 @@ const McpEditor = ({
       ) : null}
       {tested ? <p role="status">{t('mcpTestSuccess', { count: value.tools.length })}</p> : null}
       <div className={styles.row}>
+        {value.authType === 'oauth' ? (
+          <Button type="button" size="m" disabled={busy} onClick={() => void signIn()}>
+            {t(busy ? 'mcpConnecting' : 'mcpOAuthSignIn')}
+          </Button>
+        ) : null}
         <Button type="submit" size="m" disabled={busy}>
           {t(busy ? 'mcpConnecting' : 'mcpSave')}
         </Button>
-        <Button variant="outlined" size="m" disabled={busy} onClick={() => void submit(true)}>
+        <Button
+          type="button"
+          variant="outlined"
+          size="m"
+          disabled={busy}
+          onClick={() => void submit(true)}
+        >
           {t('mcpTest')}
         </Button>
-        <Button variant="outlined" size="m" disabled={busy} onClick={onCancel}>
+        <Button type="button" variant="outlined" size="m" disabled={busy} onClick={onCancel}>
           {t('cancel')}
         </Button>
       </div>

@@ -5,6 +5,8 @@ import { spawn, spawnSync } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { mockOAuth } from './mock-oauth.mjs'
+import { checkMcpOAuth } from './check-mcp-oauth.mjs'
 
 const root = path.resolve(import.meta.dirname, '..')
 const wrangler = path.join(root, 'node_modules/wrangler/bin/wrangler.js')
@@ -22,8 +24,10 @@ let searchCount = 0
 let searchedQuery = ''
 let mcpReads = 0
 let mcpWrites = 0
+const oauth = mockOAuth(mockPort)
 const mock = createServer(async (req, res) => {
-  if (req.url === '/mcp') {
+  if (await oauth.handle(req, res)) return
+  if (req.url === '/mcp' || req.url === '/oauth/mcp') {
     if (req.method === 'GET') {
       res.writeHead(405).end()
       return
@@ -32,7 +36,18 @@ const mock = createServer(async (req, res) => {
       res.writeHead(200).end()
       return
     }
-    assert.equal(req.headers.authorization, 'Bearer smoke-mcp')
+    if (
+      req.url === '/oauth/mcp' &&
+      (!oauth.state.access || req.headers.authorization !== `Bearer ${oauth.state.access}`)
+    ) {
+      res
+        .writeHead(401, {
+          'WWW-Authenticate': `Bearer resource_metadata="http://127.0.0.1:${mockPort}/oauth/resource"`,
+        })
+        .end()
+      return
+    }
+    if (req.url === '/mcp') assert.equal(req.headers.authorization, 'Bearer smoke-mcp')
     let text = ''
     for await (const chunk of req) text += chunk
     const message = JSON.parse(text)
@@ -47,7 +62,12 @@ const mock = createServer(async (req, res) => {
         capabilities: { tools: {} },
         serverInfo: { name: 'smoke-mcp', version: '1' },
       }
-    else if (message.method === 'tools/list')
+    else if (message.method === 'tools/list') {
+      if (req.url === '/oauth/mcp' && oauth.state.beforeList) {
+        const run = oauth.state.beforeList
+        oauth.state.beforeList = null
+        await run()
+      }
       result = {
         tools: [
           {
@@ -72,7 +92,7 @@ const mock = createServer(async (req, res) => {
           },
         ],
       }
-    else if (message.method === 'tools/call') {
+    } else if (message.method === 'tools/call') {
       if (message.params.name === 'read_note') mcpReads++
       else if (message.params.name === 'write_note') mcpWrites++
       else {
@@ -800,6 +820,7 @@ try {
   console.log(
     'PASS: MCP discovery, hidden credentials, read calls, explicit write approval and denied calls'
   )
+  await checkMcpOAuth({ call, origin, cookie, mockPort, state: oauth.state })
 
   assert.equal(
     (await fetch(`${origin}/api/sessions`, { headers: { Origin: 'https://another-site.example' } }))
