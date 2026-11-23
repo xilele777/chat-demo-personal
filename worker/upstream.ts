@@ -1,6 +1,8 @@
 import { readServerSentEvents } from '../src/services/api/sse.js'
 import { providerErrorMessage } from '../src/services/api/errorMessage.js'
 import { HttpError, json, type Env } from './types.js'
+import { reasoningEfforts } from './config.js'
+import { limitContext, CONTINUE_PROMPT } from './context.js'
 import {
   searchCall,
   searchContext,
@@ -16,7 +18,7 @@ type Block = {
   source?: { file_id?: string; [key: string]: unknown }
   [key: string]: unknown
 }
-type Message = { role: string; content: string | Block[] }
+type Message = { role: string; content: string | Block[]; [key: string]: unknown }
 type ChatRequest = {
   system: string
   messages: Message[]
@@ -141,8 +143,7 @@ async function messages(body: ChatRequest, env: Env) {
   if (result.at(-1)?.role === 'assistant') {
     result.push({
       role: 'user',
-      content:
-        'Continue the previous answer from exactly where it stopped. Do not repeat the existing answer.',
+      content: CONTINUE_PROMPT,
     })
   }
   return { system: [body.system, reminder].filter(Boolean).join('\n\n'), messages: result }
@@ -286,35 +287,70 @@ function eventStream(
   )
 }
 
-async function genericProvider(body: ChatRequest, env: Env, signal: AbortSignal) {
+async function genericProvider(
+  body: ChatRequest,
+  env: Env,
+  signal: AbortSignal,
+  extra: Record<string, unknown> = {}
+) {
   const max = Number(env.MAX_OUTPUT_TOKENS ?? 8192)
-  const payload =
+  if (!Number.isInteger(max) || max < 1) {
+    throw new HttpError(503, 'Invalid MAX_OUTPUT_TOKENS')
+  }
+  const effort = body.reasoning_effort
+  if (effort !== undefined && !reasoningEfforts(env).includes(effort as never)) {
+    throw new HttpError(422, 'This reasoning effort is not configured for the selected provider')
+  }
+  const history = limitContext(body.system, body.messages, env)
+  const payload: Record<string, unknown> =
     env.UPSTREAM_PROTOCOL === 'openai'
       ? {
           model: env.UPSTREAM_MODEL,
-          messages: [{ role: 'system', content: body.system }, ...body.messages],
-          max_tokens: max,
+          messages: [{ role: 'system', content: body.system }, ...history],
+          max_completion_tokens: max,
+          ...(effort ? { reasoning_effort: effort } : {}),
           stream: true,
+          stream_options: { include_usage: true },
+          ...extra,
         }
       : {
           model: env.UPSTREAM_MODEL,
           system: body.system,
-          messages: body.messages,
+          messages: history,
           max_tokens: max,
           stream: true,
+          ...extra,
         }
-  return check(
-    await fetch(
-      `${base(env)}/${env.UPSTREAM_PROTOCOL === 'openai' ? 'chat/completions' : 'messages'}`,
-      {
-        method: 'POST',
-        headers: headers(env),
-        body: JSON.stringify(payload),
-        signal,
-        redirect: 'manual',
-      }
-    )
-  )
+  const send = () =>
+    fetch(`${base(env)}/${env.UPSTREAM_PROTOCOL === 'openai' ? 'chat/completions' : 'messages'}`, {
+      method: 'POST',
+      headers: headers(env),
+      body: JSON.stringify(payload),
+      signal,
+      redirect: 'manual',
+    })
+  let response = await send()
+  // Retry only rejected optional compatibility fields; explicit effort and tool requests stay intact.
+  for (
+    let attempt = 0;
+    env.UPSTREAM_PROTOCOL === 'openai' && response.status === 400 && attempt < 2;
+    attempt++
+  ) {
+    const error = (await response.clone().text()).slice(0, 4000)
+    if (!/unsupported|unrecognized|unknown|not supported|not allowed/i.test(error)) {
+      break
+    }
+    if (/max_completion_tokens/.test(error) && payload.max_completion_tokens !== undefined) {
+      payload.max_tokens = payload.max_completion_tokens
+      delete payload.max_completion_tokens
+    } else if (/stream_options/.test(error) && payload.stream_options !== undefined) {
+      delete payload.stream_options
+    } else {
+      break
+    }
+    response = await send()
+  }
+  return check(response)
 }
 
 async function* searchedReply(body: ChatRequest, env: Env, signal: AbortSignal) {
@@ -446,10 +482,8 @@ export async function upstream(request: Request, env: Env, path: string): Promis
       return eventStream((signal) => searchedReply(body, env, signal), request.signal)
     }
     const converted = await messages(body, env)
-    const response = await genericProvider(converted, env, request.signal)
-    return env.UPSTREAM_PROTOCOL === 'openai'
-      ? openAIStream(response, request.signal, env.UPSTREAM_MODEL)
-      : response
+    const response = await genericProvider({ ...body, ...converted }, env, request.signal)
+    return env.UPSTREAM_PROTOCOL === 'openai' ? openAIStream(response, request.signal, env.UPSTREAM_MODEL) : response
   }
   if (['/api/v1/tools/asr', '/api/v1/tools/tts'].includes(path) && request.method === 'POST') {
     if (!deepseek) {

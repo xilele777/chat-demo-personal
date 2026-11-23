@@ -7,7 +7,7 @@ import {
   IconStopFill16,
   IconThinkOutline14,
 } from '../base/icons.js'
-import { setSearch, setThinking, useSettings } from '../../services/settings.js'
+import { setSearch, setThinking, setReasoningEffort, useSettings } from '../../services/settings.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { sendMessage, stopReply, useChatStore } from '../../services/chat/store.js'
 import {
@@ -54,6 +54,13 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const streaming = useChatStore(
     (state) => sessionId !== null && Object.hasOwn(state.streaming, sessionId)
   )
+  const reasoningEffort = useSettings((state) => state.reasoningEffort)
+  const effortOptions = capabilities?.reasoningEfforts ?? []
+  const selectedEffort = effortOptions.includes(
+    reasoningEffort as Exclude<typeof reasoningEffort, 'auto'>
+  )
+    ? reasoningEffort
+    : 'auto'
   const thinking = useSettings((state) => state.thinking)
   const importingHistory = useChatStore((state) => state.importingHistory)
   const isMobile = useIsMobile()
@@ -207,21 +214,37 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
       <div className={styles.functionRow}>
         {/* 深度思考 / 智能搜索开关，tooltip 在按钮上方 */}
         <div ref={togglesRef} className={styles.toggles}>
-          <Tooltip
-            content={t(thinkingEnabled ? 'deactivatedThinkTooltip' : 'cloudFeatureUnavailable')}
-          >
-            <button
-              type="button"
-              className={clsx(styles.toggle, thinkingEnabled && thinking && styles.selected)}
-              disabled={!thinkingEnabled}
-              aria-label={t('thinkingSwitch')}
-              aria-pressed={thinkingEnabled && thinking}
-              onClick={() => setThinking(!thinking)}
+          {cloudMode && capabilities?.protocol === 'openai' ? (
+            <select
+              className={styles.toggle}
+              aria-label={t('reasoningEffort')}
+              value={selectedEffort}
+              onChange={(event) => setReasoningEffort(event.target.value as typeof reasoningEffort)}
             >
-              <IconThinkOutline14 />
-              <span className={styles.toggleLabel}>{t('thinkingSwitch')}</span>
-            </button>
-          </Tooltip>
+              <option value="auto">{t('reasoningAuto')}</option>
+              {effortOptions.map((value) => (
+                <option key={value} value={value}>
+                  {t(`reasoning_${value}`)}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <Tooltip
+              content={t(thinkingEnabled ? 'deactivatedThinkTooltip' : 'cloudFeatureUnavailable')}
+            >
+              <button
+                type="button"
+                className={clsx(styles.toggle, thinkingEnabled && thinking && styles.selected)}
+                disabled={!thinkingEnabled}
+                aria-label={t('thinkingSwitch')}
+                aria-pressed={thinkingEnabled && thinking}
+                onClick={() => setThinking(!thinking)}
+              >
+                <IconThinkOutline14 />
+                <span className={styles.toggleLabel}>{t('thinkingSwitch')}</span>
+              </button>
+            </Tooltip>
+          )}
           <Tooltip
             content={t(searchEnabled ? 'deactivatedSearchTooltip' : 'searchUnavailableTooltip')}
           >
@@ -234,7 +257,9 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               onClick={() => setSearch(!search)}
             >
               <IconGlobeLanguageOutline14 />
-              <span className={styles.toggleLabel}>{t('search')}</span>
+              <span className={styles.toggleLabel}>
+                {t(cloudMode ? (search ? 'webSearchOn' : 'webSearch') : 'search')}
+              </span>
             </button>
           </Tooltip>
         </div>

@@ -73,6 +73,11 @@
   cursor: pointer;
 }
 
+select.toggle {
+  max-width: 150px;
+  cursor: pointer;
+}
+
 .uploading {
   position: absolute;
   inset: 0;

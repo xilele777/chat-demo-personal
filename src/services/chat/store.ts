@@ -421,6 +421,7 @@ const createReply = (): AssistantMessage => {
     role: 'assistant',
     createdAt: Date.now(),
     model: cloudMode ? (useCloud.getState().config?.model ?? MODEL) : MODEL,
+    reasoningEffort: useSettings.getState().reasoningEffort,
     thinking: thinking && (!cloudMode || Boolean(useCloud.getState().config?.thinking)),
     search: search && (!cloudMode || Boolean(useCloud.getState().config?.search)),
     prefix: true,
@@ -910,6 +911,7 @@ export const continueReply = (sessionId: string, messageId: string) => {
     // 未记录请求配置的回复，续写时使用默认模型和当前开关。
     model: previous.model ?? MODEL,
     thinking: previous.thinking ?? thinking,
+    reasoningEffort: previous.reasoningEffort ?? useSettings.getState().reasoningEffort,
     search: previous.search ?? search,
     status: 'pending',
     stopReason: undefined,
@@ -1209,7 +1211,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           prepared.question,
           prepared.prefix,
           initial.thinking ?? false,
-          latestReminder
+          latestReminder,
+          cloudMode && useCloud.getState().config?.protocol !== 'deepseek'
         )
         const events = streamMessage(
           useSettings.getState().apiKey ?? '',
@@ -1221,6 +1224,13 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
                 : SYSTEM_PROMPT,
             messages,
             thinking: { type: initial.thinking ? 'enabled' : 'disabled' },
+            ...(cloudMode &&
+            useCloud.getState().config?.protocol === 'openai' &&
+            initial.reasoningEffort &&
+            initial.reasoningEffort !== 'auto' &&
+            useCloud.getState().config?.reasoningEfforts.includes(initial.reasoningEffort)
+              ? { reasoning_effort: initial.reasoningEffort }
+              : {}),
             safety_check: SAFETY_CHECK,
             tools: serverTools(initial.search ?? false),
             ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),

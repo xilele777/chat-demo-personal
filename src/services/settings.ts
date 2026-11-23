@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { ReasoningEffort } from './api/types.js'
 import type { TtsVoice } from './api/speech.js'
 import { normalizeLocation, type UserLocation } from './location.js'
 
@@ -15,6 +16,7 @@ type Settings = {
   location: UserLocation | null
   ttsVoice: TtsVoice
   thinking: boolean
+  reasoningEffort: ReasoningEffort
   search: boolean
   siderCollapsed: boolean
 }
@@ -26,6 +28,7 @@ const KEYS = {
   themePreference: 'chat-demo:theme-preference',
   ttsVoice: 'chat-demo:tts-voice',
   thinking: 'chat-demo:thinking',
+  reasoningEffort: 'chat-demo:reasoning-effort',
   search: 'chat-demo:search',
   siderCollapsed: 'chat-demo:sider-collapsed',
 } as const
@@ -94,6 +97,11 @@ export const useSettings = create<Settings>(() => ({
   themePreference: initialThemePreference(),
   ttsVoice: initialTtsVoice(),
   thinking: read(KEYS.thinking) === 'true',
+  reasoningEffort: (['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(
+    read(KEYS.reasoningEffort) ?? ''
+  )
+    ? read(KEYS.reasoningEffort)
+    : 'auto') as ReasoningEffort,
   search: read(KEYS.search) === 'true',
   siderCollapsed: read(KEYS.siderCollapsed) === 'true',
 }))
@@ -127,6 +135,11 @@ export const setApiKey = (apiKey: string | null) => {
 export const setThinking = (thinking: boolean) => {
   write(KEYS.thinking, String(thinking))
   useSettings.setState({ thinking })
+}
+
+export const setReasoningEffort = (reasoningEffort: ReasoningEffort) => {
+  write(KEYS.reasoningEffort, reasoningEffort)
+  useSettings.setState({ reasoningEffort })
 }
 
 export const setSearch = (search: boolean) => {

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { ReasoningEffort } from './api/types.js'
 
 export const cloudMode = __CLOUD_MODE__
 
@@ -9,6 +10,7 @@ export type CloudConfig = {
   search: boolean
   speech: boolean
   thinking: boolean
+  reasoningEfforts: Exclude<ReasoningEffort, 'auto'>[]
 }
 
 export const useCloud = create<{

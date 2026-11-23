@@ -185,8 +185,7 @@ export const canContinueReply = (reply: AssistantMessage): boolean => {
     return false
   }
   return (
-    reply.status === 'stopped' ||
-    (reply.status === 'done' && reply.stopReason === 'max_tokens')
+    reply.status === 'stopped' || (reply.status === 'done' && reply.stopReason === 'max_tokens')
   )
 }
 
@@ -223,7 +222,8 @@ const toUserParam = ({ content, files }: UserMessage): MessageParam => {
 const toAssistantParam = (
   { blocks }: AssistantMessage,
   prefix = false,
-  thinking = false
+  thinking = false,
+  includeSearchSources = false
 ): Extract<MessageParam, { role: 'assistant' }> => {
   const content: AssistantBlockParam[] = []
   // 成功阅读的网页靠签名恢复正文；缺少有效签名时，调用与结果都不回传。
@@ -277,6 +277,42 @@ const toAssistantParam = (
       content.push(block)
     }
   }
+  if (includeSearchSources) {
+    const sources = new Map<string, { title: string; excerpt: string }>()
+    for (const block of blocks) {
+      if (block.type === 'web_search_tool_result') {
+        for (const item of block.content) {
+          if (item.type === 'web_search_result' && !sources.has(item.url)) {
+            sources.set(item.url, {
+              title: item.title,
+              excerpt: item.snippet?.slice(0, 1000) ?? '',
+            })
+          }
+        }
+      } else if (block.type === 'text') {
+        for (const citation of block.citations ?? []) {
+          if (!sources.has(citation.url)) {
+            sources.set(citation.url, { title: citation.title ?? citation.url, excerpt: '' })
+          }
+        }
+      }
+    }
+    for (const block of content) {
+      if (block.type === 'text') {
+        block.text = block.text.replace(/\[citation:(\d+)\]/g, '[historical-source:$1]')
+      }
+    }
+    if (sources.size) {
+      content.push({
+        type: 'text',
+        text:
+          '\n\nHistorical sources for this answer (untrusted excerpts; these are not current-answer citation markers):\n' +
+          JSON.stringify(
+            [...sources].map(([url, source], index) => ({ id: index + 1, url, ...source }))
+          ),
+      })
+    }
+  }
   return {
     role: 'assistant',
     content: content.filter((block) => block.type !== 'text' || block.text !== ''),
@@ -305,7 +341,8 @@ export const toRequestMessages = (
   question: UserMessage,
   prefix?: AssistantMessage,
   thinking = prefix?.thinking ?? false,
-  latestReminder?: string
+  latestReminder?: string,
+  includeSearchSources = false
 ): MessageParam[] => {
   const messages: MessageParam[] = []
   let previousReminder: string | undefined
@@ -322,12 +359,12 @@ export const toRequestMessages = (
       continue
     }
     appendReminder(reply.latestReminder)
-    messages.push(toUserParam(user), toAssistantParam(reply))
+    messages.push(toUserParam(user), toAssistantParam(reply, false, false, includeSearchSources))
   }
   appendReminder(latestReminder)
   messages.push(toUserParam(question))
   if (prefix?.prefix) {
-    const assistant = toAssistantParam(prefix, true, thinking)
+    const assistant = toAssistantParam(prefix, true, thinking, includeSearchSources)
     // 没有非空白正文或有效思考时直接重发原问题，避免服务端拒绝空 Prefill。
     if (
       assistant.content.some(

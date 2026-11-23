@@ -60,6 +60,24 @@ const mock = createServer(async (req, res) => {
   for await (const chunk of req) body += chunk
   sentToProvider = JSON.parse(body)
   assert.equal(req.headers.authorization, 'Bearer smoke-test')
+  if (
+    sentToProvider.messages.some((message) => message.content === 'legacy token field') &&
+    sentToProvider.max_completion_tokens !== undefined
+  ) {
+    res
+      .writeHead(400, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ error: { message: 'Unsupported parameter: max_completion_tokens' } }))
+    return
+  }
+  if (
+    sentToProvider.messages.some((message) => message.content === 'legacy stream options') &&
+    sentToProvider.stream_options !== undefined
+  ) {
+    res
+      .writeHead(400, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ error: { message: 'Unknown parameter: stream_options' } }))
+    return
+  }
   res.writeHead(200, { 'Content-Type': 'text/event-stream' })
   for (const delta of [
     { reasoning_content: '先检查内容。' },
@@ -140,6 +158,8 @@ try {
       'UPSTREAM_API_KEY:smoke-test',
       '--var',
       'UPSTREAM_MODEL:test-model',
+      '--var',
+      'OPENAI_REASONING_EFFORTS:low,medium,high',
       '--var',
       'TAVILY_API_KEY:smoke-search',
       '--var',
@@ -464,6 +484,43 @@ try {
   console.log(
     'PASS: real search event flow, reasoning, citations, invalid/duplicate URLs, errors and empty results'
   )
+
+  const capabilities = await (await call('/config')).json()
+  assert.deepEqual(capabilities.reasoningEfforts, ['low', 'medium', 'high'])
+  const highReasoning = await call('/anthropic/v1/messages', 'POST', {
+    system: '测试',
+    messages: [{ role: 'user', content: 'reasoning test' }],
+    reasoning_effort: 'high',
+  })
+  await highReasoning.text()
+  assert.equal(sentToProvider.reasoning_effort, 'high')
+  assert.equal(sentToProvider.max_completion_tokens, 8192)
+  assert.equal(sentToProvider.max_tokens, undefined)
+  await (
+    await call('/anthropic/v1/messages', 'POST', {
+      system: '测试',
+      messages: [{ role: 'user', content: 'auto reasoning' }],
+    })
+  ).text()
+  assert.equal(sentToProvider.reasoning_effort, undefined)
+  await (
+    await call('/anthropic/v1/messages', 'POST', {
+      system: '测试',
+      messages: [{ role: 'user', content: 'legacy token field' }],
+      reasoning_effort: 'high',
+    })
+  ).text()
+  assert.equal(sentToProvider.max_tokens, 8192)
+  assert.equal(sentToProvider.max_completion_tokens, undefined)
+  assert.equal(sentToProvider.reasoning_effort, 'high')
+  await (
+    await call('/anthropic/v1/messages', 'POST', {
+      system: '测试',
+      messages: [{ role: 'user', content: 'legacy stream options' }],
+    })
+  ).text()
+  assert.equal(sentToProvider.stream_options, undefined)
+  console.log('PASS: reasoning effort and modern/legacy OpenAI token parameters')
 
   const { openAIStream } = await import('../worker/upstream.ts')
   let upstreamCancelled = false
