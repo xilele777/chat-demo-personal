@@ -14,7 +14,11 @@ export const contextCost = (content: unknown): number => {
     return content.reduce(
       (sum, block) =>
         sum +
-        (block.type === 'image' || block.type === 'image_url' ? 4096 : contextCost(block.text)),
+        (block.type === 'image' || block.type === 'image_url'
+          ? 4096
+          : contextCost(block.text) +
+            contextCost(block.content) +
+            contextCost(block.input ? JSON.stringify(block.input) : '')),
       0
     )
   }
@@ -44,7 +48,13 @@ export const limitContext = <T extends ContextMessage>(
   while (cost() > limit) {
     const next = result.findIndex(
       (message, index) =>
-        index > 0 && message.role === 'user' && message.content !== CONTINUE_PROMPT
+        index > 0 &&
+        message.role === 'user' &&
+        message.content !== CONTINUE_PROMPT &&
+        !(
+          Array.isArray(message.content) &&
+          message.content.some((block) => block.type === 'tool_result')
+        )
     )
     if (next < 0) {
       throw new HttpError(

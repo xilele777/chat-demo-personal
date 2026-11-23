@@ -20,7 +20,79 @@ let worker
 let logs = ''
 let searchCount = 0
 let searchedQuery = ''
+let mcpReads = 0
+let mcpWrites = 0
 const mock = createServer(async (req, res) => {
+  if (req.url === '/mcp') {
+    if (req.method === 'GET') {
+      res.writeHead(405).end()
+      return
+    }
+    if (req.method === 'DELETE') {
+      res.writeHead(200).end()
+      return
+    }
+    assert.equal(req.headers.authorization, 'Bearer smoke-mcp')
+    let text = ''
+    for await (const chunk of req) text += chunk
+    const message = JSON.parse(text)
+    if (message.id === undefined) {
+      res.writeHead(202).end()
+      return
+    }
+    let result
+    if (message.method === 'initialize')
+      result = {
+        protocolVersion: message.params.protocolVersion,
+        capabilities: { tools: {} },
+        serverInfo: { name: 'smoke-mcp', version: '1' },
+      }
+    else if (message.method === 'tools/list')
+      result = {
+        tools: [
+          {
+            name: 'read_note',
+            description: 'Read a note',
+            inputSchema: {
+              type: 'object',
+              properties: { query: { type: 'string' } },
+              required: ['query'],
+            },
+            annotations: { readOnlyHint: true },
+          },
+          {
+            name: 'write_note',
+            description: 'Write a note',
+            inputSchema: {
+              type: 'object',
+              properties: { query: { type: 'string' } },
+              required: ['query'],
+            },
+            annotations: { readOnlyHint: false },
+          },
+        ],
+      }
+    else if (message.method === 'tools/call') {
+      if (message.params.name === 'read_note') mcpReads++
+      else if (message.params.name === 'write_note') mcpWrites++
+      else {
+        res.writeHead(400).end()
+        return
+      }
+      result = { content: [{ type: 'text', text: `MCP ${message.params.name} result` }] }
+    } else result = {}
+    res
+      .writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }))
+    return
+  }
+  if (req.url === '/v1/models') {
+    assert.equal(req.headers.authorization, 'Bearer smoke-test')
+    res
+      .writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ data: [{ id: 'test-model' }, { id: 'second-model' }] }))
+    return
+  }
   if (req.url === '/search') {
     let text = ''
     for await (const chunk of req) text += chunk
@@ -90,7 +162,22 @@ const mock = createServer(async (req, res) => {
   const lastText =
     typeof last.content === 'string' ? last.content : last.content.map((b) => b.text ?? '').join('')
   if (
-    sentToProvider.tools &&
+    last.role === 'user' &&
+    ['mcp-read', 'mcp-write'].includes(lastText) &&
+    sentToProvider.tool_choice !== 'none'
+  ) {
+    const target = sentToProvider.tools?.find((tool) =>
+      tool.function.description.includes(lastText === 'mcp-read' ? 'Read a note' : 'Write a note')
+    )
+    if (target) {
+      res.end(
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_mcp', type: 'function', function: { name: target.function.name, arguments: '{"query":"note"}' } }] }, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 100, completion_tokens: 10 } })}\n\ndata: [DONE]\n\n`
+      )
+      return
+    }
+  }
+  if (
+    sentToProvider.tools?.some((tool) => tool.function.name === 'web_search') &&
     last.role === 'user' &&
     lastText !== '你好' &&
     sentToProvider.tool_choice !== 'none'
@@ -116,7 +203,14 @@ const mock = createServer(async (req, res) => {
     )
     return
   }
-  const sources = last.role === 'tool' ? JSON.parse(last.content).sources : []
+  let sources = []
+  if (last.role === 'tool') {
+    try {
+      sources = JSON.parse(last.content).sources ?? []
+    } catch {
+      /* A denied MCP call returns plain text. */
+    }
+  }
   for (const delta of [
     { reasoning_content: '先检查内容。' },
     { content: '你好，' },
@@ -127,7 +221,7 @@ const mock = createServer(async (req, res) => {
     res.write(`data: ${JSON.stringify({ choices: [{ delta, finish_reason: null }] })}\n\n`)
   }
   res.end(
-    `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`
+    `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: lastText === 'no-usage' ? undefined : { prompt_tokens: 100, completion_tokens: 40, prompt_tokens_details: { cached_tokens: 30 }, completion_tokens_details: { reasoning_tokens: 20 } } })}\n\ndata: [DONE]\n\n`
   )
 })
 const call = (route, method = 'GET', body) =>
@@ -596,6 +690,116 @@ try {
   await cancellationReader.cancel()
   assert.equal(upstreamCancelled, true)
   console.log('PASS: cancelling generation releases the upstream response stream')
+
+  const models = await (await call('/models')).json()
+  assert.deepEqual(
+    models.data.map((model) => model.id),
+    ['test-model', 'second-model']
+  )
+  await (
+    await call('/anthropic/v1/messages', 'POST', {
+      system: 'test',
+      model: 'second-model',
+      messages: [{ role: 'user', content: '你好' }],
+    })
+  ).text()
+  assert.equal(sentToProvider.model, 'second-model')
+  assert.equal(
+    (await call('/anthropic/v1/messages', 'POST', { model: 'invalid model', messages: [] })).status,
+    400
+  )
+  const tokenEvents = stream
+    .split('\n')
+    .filter((line) => line.startsWith('data: '))
+    .map((line) => JSON.parse(line.slice(6)))
+  const tokenUsage = tokenEvents.find((event) => event.type === 'message_delta').usage
+  assert.deepEqual(tokenUsage, {
+    input_tokens: 70,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 30,
+    output_tokens: 40,
+    reasoning_tokens: 20,
+  })
+  const missingUsage = await (
+    await call('/anthropic/v1/messages', 'POST', {
+      system: 'test',
+      messages: [{ role: 'user', content: 'no-usage' }],
+    })
+  ).text()
+  assert.doesNotMatch(missingUsage, /"usage"/)
+  console.log(
+    'PASS: model discovery, per-message model selection and accurate or unavailable token usage'
+  )
+
+  const searchIndex = await (await call('/sessions')).json()
+  await call('/sessions/search-check', 'PUT', {
+    session: session('search-check', 'Hidden TOKEN 100%_value'),
+    revision: null,
+    generation: searchIndex.generation,
+  })
+  const found = await (await call('/history/search?q=TOKEN')).json()
+  assert.equal(found.results[0].messageId, 'reply')
+  const literal = await (await call('/history/search?q=100%25_value')).json()
+  assert.equal(literal.results[0].sessionId, 'search-check')
+  assert.equal((await call('/history/search?q=')).status, 400)
+  console.log(
+    'PASS: D1 history searches return message locations and treat wildcard characters literally'
+  )
+
+  const mcpConfig = {
+    name: 'Test MCP',
+    url: `http://127.0.0.1:${mockPort}/mcp`,
+    enabled: true,
+    token: 'smoke-mcp',
+    disabledTools: [],
+  }
+  const tested = await call('/mcp/servers/test-mcp/test', 'POST', mcpConfig)
+  assert.equal(tested.status, 200, await tested.clone().text())
+  assert.equal((await tested.json()).server.tools.length, 2)
+  const savedMcp = await call('/mcp/servers/test-mcp', 'PUT', mcpConfig)
+  assert.equal(savedMcp.status, 200, await savedMcp.clone().text())
+  assert.doesNotMatch(await (await call('/mcp/servers')).text(), /smoke-mcp/)
+  const readMcp = await (
+    await call('/anthropic/v1/messages', 'POST', {
+      system: 'test',
+      messages: [{ role: 'user', content: 'mcp-read' }],
+    })
+  ).text()
+  assert.match(readMcp, /mcp_tool_status/)
+  assert.match(readMcp, /"status":"done"/)
+  assert.equal(mcpReads, 1)
+  assert.equal(mcpWrites, 0)
+  const approveCall = async (approved) => {
+    const response = await call('/anthropic/v1/messages', 'POST', {
+      system: 'test',
+      messages: [{ role: 'user', content: 'mcp-write' }],
+    })
+    const reader = response.body.getReader()
+    let output = ''
+    let decision = false
+    for (;;) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      output += new TextDecoder().decode(chunk.value)
+      const match = output.match(/"approvalId":"([a-zA-Z0-9_-]+)"/)
+      if (match && !decision) {
+        assert.equal(mcpWrites, approved ? 0 : 1)
+        assert.equal((await call(`/mcp/approvals/${match[1]}`, 'POST', { approved })).status, 200)
+        decision = true
+      }
+    }
+    assert.equal(decision, true)
+    assert.match(output, approved ? /"status":"done"/ : /"status":"denied"/)
+  }
+  await approveCall(true)
+  assert.equal(mcpWrites, 1)
+  await approveCall(false)
+  assert.equal(mcpWrites, 1)
+  await call('/mcp/servers/test-mcp', 'DELETE')
+  assert.equal((await (await call('/mcp/servers')).json()).servers.length, 0)
+  console.log(
+    'PASS: MCP discovery, hidden credentials, read calls, explicit write approval and denied calls'
+  )
 
   assert.equal(
     (await fetch(`${origin}/api/sessions`, { headers: { Origin: 'https://another-site.example' } }))

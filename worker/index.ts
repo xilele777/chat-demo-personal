@@ -3,6 +3,7 @@ import { storage } from './storage.js'
 import { upstream } from './upstream.js'
 import { publicConfig } from './config.js'
 import { HttpError, json, type Env } from './types.js'
+import { mcpRoutes } from './mcp.js'
 
 // Wrangler's module entry point requires a default export.
 // eslint-disable-next-line import/no-default-export
@@ -30,7 +31,10 @@ export default {
           }
           return json(publicConfig(env))
         }
-        const response = (await storage(request, env, path)) ?? (await upstream(request, env, path))
+        const response =
+          (await mcpRoutes(request, env, path)) ??
+          (await storage(request, env, path)) ??
+          (await upstream(request, env, path))
         if (!response) {
           throw new HttpError(404, 'API route not found')
         }

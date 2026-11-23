@@ -1,3 +1,5 @@
+import type { McpToolBlock } from '../mcpTypes.js'
+
 /**
  * Messages API（Anthropic 兼容格式）协议类型，只取本应用用到的部分。
  * 文档：https://api-docs.deepseek.com/zh-cn/api/create-message
@@ -198,6 +200,8 @@ export type MessageUsage = {
   cache_read_input_tokens: number
   /** message_start 中为 0，message_delta 中为全轮累计值 */
   output_tokens: number
+  /** Included in output_tokens, never added to the total again. */
+  reasoning_tokens?: number
   /** 仅当 message_delta 中有对外输出的搜索结果块时出现 */
   server_tool_use?: { web_search_requests: number; tool_search: number }
 }
@@ -214,6 +218,7 @@ export type ContentBlockDelta =
 
 /** 流式事件：SSE 的 event 名与 JSON 的 type 相同，以 message_stop 结束，不发送 [DONE] */
 export type MessageStreamEvent =
+  | { type: 'mcp_tool_status'; block: McpToolBlock }
   | {
       type: 'message_start'
       /** id 为不带 msg_ 前缀的 UUID，等于响应头 x-ds-request-id */

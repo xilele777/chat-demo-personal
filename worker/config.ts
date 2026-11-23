@@ -22,4 +22,6 @@ export const publicConfig = (env: Env) => ({
   speech: env.UPSTREAM_PROTOCOL === 'deepseek',
   thinking: env.UPSTREAM_PROTOCOL === 'deepseek',
   reasoningEfforts: reasoningEfforts(env),
+  reasoningEffortsAutomatic: env.OPENAI_REASONING_EFFORTS === undefined,
+  mcp: env.UPSTREAM_PROTOCOL === 'openai' || env.UPSTREAM_PROTOCOL === 'anthropic',
 })

@@ -15,12 +15,16 @@
     "db:remote": "wrangler d1 migrations apply personal-chat --remote",
     "type:worker": "tsc -p tsconfig.worker.json",
     "test:context": "node --import tsx scripts/check-context.mjs",
+    "test:product": "node --import tsx scripts/check-product.mjs",
+    "test:ui": "node scripts/check-ui.mjs",
+    "test:anthropic": "node --import tsx scripts/check-anthropic.mjs",
     "test:cloud": "node --import tsx scripts/smoke-cloud.mjs",
     "type": "tsc -p tsconfig.json",
     "lint": "oxlint src worker rspack.config.ts",
     "format": "oxfmt --write ."
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@types/katex": "^0.16.5",
     "@types/mdast": "~4.0.3",
     "@types/prismjs": "^1.26.1",
@@ -51,6 +55,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261121.1",
+    "@playwright/test": "^1.65.1",
     "@rspack/cli": "2.0.2",
     "@rspack/core": "2.0.2",
     "@rspack/dev-server": "2.0.1",

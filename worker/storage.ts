@@ -1,4 +1,5 @@
 import { HttpError, json, readSession, validId, type Env } from './types.js'
+import { searchSession, type SearchableSession } from '../src/services/chat/search.js'
 
 const conflict = () =>
   new HttpError(
@@ -7,6 +8,35 @@ const conflict = () =>
   )
 
 export async function storage(request: Request, env: Env, path: string): Promise<Response | null> {
+  if (path === '/api/history/search' && request.method === 'GET') {
+    const query = new URL(request.url).searchParams.get('q')?.trim() ?? ''
+    if (!query || query.length > 200) {
+      throw new HttpError(400, 'Search must contain 1–200 characters')
+    }
+    const pattern = `%${query.replace(/[\\%_]/g, '\\$&')}%`
+    // Narrow candidates in D1; only the matching excerpts travel to the browser.
+    const rows = await env.DB.prepare(`SELECT data FROM sessions s WHERE deleted = 0 AND (
+      title LIKE ? ESCAPE '\\' OR EXISTS (
+        SELECT 1 FROM json_each(s.data, '$.messages') m WHERE
+        json_extract(m.value, '$.content') LIKE ? ESCAPE '\\' OR EXISTS (
+          SELECT 1 FROM json_each(m.value, '$.blocks') b WHERE
+          json_extract(b.value, '$.type') = 'text' AND json_extract(b.value, '$.text') LIKE ? ESCAPE '\\'
+        )
+      )
+    ) ORDER BY updated_at DESC LIMIT 100`)
+      .bind(pattern, pattern, pattern)
+      .all<{ data: string }>()
+    const results = []
+    for (const row of rows.results) {
+      results.push(
+        ...searchSession(JSON.parse(row.data) as SearchableSession, query, 50 - results.length)
+      )
+      if (results.length >= 50) {
+        break
+      }
+    }
+    return json({ results, limited: results.length >= 50 || rows.results.length >= 100 })
+  }
   if (path === '/api/sessions' && request.method === 'GET') {
     const [state, sessions] = await env.DB.batch([
       env.DB.prepare('SELECT generation, revision FROM cloud_state WHERE id = 1'),
