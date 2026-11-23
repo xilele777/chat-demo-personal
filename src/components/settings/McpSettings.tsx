@@ -6,6 +6,8 @@ import { createId } from '../../utils/id.js'
 import { Button } from '../base/Button.js'
 import styles from './Connections.module.css'
 import { useSettingsDialog } from './settingsDialogState.js'
+import { showToast } from '../base/toastState.js'
+import { IconCheckOutline16 } from '../base/icons.js'
 
 type Editor = McpServer & { token?: string }
 const redirectToOAuth = async (server: Editor) => {
@@ -29,6 +31,13 @@ export const McpSettings = () => {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const notified = useRef(false)
+  useEffect(() => {
+    if (oauthResult === 'connected' && !notified.current) {
+      notified.current = true
+      showToast({ key: 'mcpOAuthToast' })
+    }
+  }, [oauthResult])
   const refresh = async () => {
     const result = (await (await cloudFetch('/mcp/servers')).json()) as { servers: McpServer[] }
     setServers(result.servers)
@@ -60,7 +69,24 @@ export const McpSettings = () => {
   return (
     <div className={styles.stack}>
       {!supported ? <p className={styles.description}>{t('mcpProtocolUnavailable')}</p> : null}
-      {oauthResult === 'connected' ? <p role="status">{t('mcpOAuthSuccess')}</p> : null}
+      {oauthResult === 'connected' ? (
+        <div className={styles.success}>
+          <span className={styles.successIcon}>
+            <IconCheckOutline16 />
+          </span>
+          <div>
+            <strong>{t('mcpOAuthSuccess')}</strong>
+            <p>{t('mcpOAuthSuccessHelp')}</p>
+          </div>
+          <Button
+            size="s"
+            variant="outlined"
+            onClick={() => useSettingsDialog.setState({ oauthResult: null })}
+          >
+            {t('mcpOAuthDismiss')}
+          </Button>
+        </div>
+      ) : null}
       {oauthResult === 'failed' ? (
         <p role="alert" className={styles.error}>
           {t('mcpOAuthFailed')}
@@ -223,6 +249,7 @@ const McpEditor = ({
       if (test) {
         setValue((value) => ({ ...value, tools: data.server.tools }))
         setTested(true)
+        showToast({ key: 'mcpTestToast' })
       } else {
         await onSaved()
       }

@@ -39,6 +39,37 @@
   color: var(--dsw-alias-state-error-primary);
   font-size: 13px;
 }
+
+.success {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--dsw-alias-button-ghost-active-border);
+  border-radius: 12px;
+  background: var(--dsw-alias-button-ghost-active-fill);
+  color: var(--dsw-alias-label-primary);
+}
+.success > div {
+  flex: 1;
+  min-width: 0;
+}
+.success p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+.successIcon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-brand-text);
+}
 .row {
   display: flex;
   align-items: center;

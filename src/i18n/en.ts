@@ -69,6 +69,10 @@ export const en = {
   mcpOAuthAuthorized: 'Signed in with OAuth',
   mcpOAuthRequired: 'OAuth sign-in required. Reconnect this server.',
   mcpOAuthSuccess: 'OAuth authorization succeeded. Connection saved.',
+  mcpOAuthToast: 'MCP authenticated successfully',
+  mcpOAuthDismiss: 'Got it',
+  mcpTestToast: 'MCP connection test succeeded',
+  mcpOAuthSuccessHelp: 'Tools synced. Enable the connection to let AI use your selected tools when needed.',
   mcpOAuthFailed:
     'OAuth authorization was not completed or has expired. Open the connection editor and sign in again.',
   mcpOAuthHelp:

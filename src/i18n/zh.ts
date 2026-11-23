@@ -87,6 +87,10 @@ export const zh = {
   mcpOAuthAuthorized: '已通过 OAuth 登录',
   mcpOAuthRequired: '需要登录授权，请重新连接此服务。',
   mcpOAuthSuccess: 'OAuth 授权成功，连接已保存。',
+  mcpOAuthToast: 'MCP 认证成功',
+  mcpOAuthDismiss: '知道了',
+  mcpTestToast: 'MCP 连接测试成功',
+  mcpOAuthSuccessHelp: '工具已同步。启用连接后，AI 会在需要时使用已勾选的工具。',
   mcpOAuthFailed: 'OAuth 授权未完成或已过期。请在连接配置中重新登录授权。',
   mcpOAuthHelp:
     '适用于 Notion 等支持 OAuth 的服务。点击“登录授权”前往服务网站，完成后自动保存连接；凭据保存在云端并自动刷新。Notion 地址：https://mcp.notion.com/mcp。',
