@@ -113,6 +113,7 @@ export type Session = {
   cloud?: { revision: string | null; generation: string }
   id: string
   title: string
+  titleSource?: 'pending' | 'generated' | 'manual'
   createdAt: number
   updatedAt: number
   /** Missing on older conversations; shared with the complete cloud snapshot. */

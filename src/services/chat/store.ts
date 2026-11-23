@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { cloudMode, useCloud } from '../cloud.js'
+import { cloudMode, cloudFetch, cloudJson, useCloud } from '../cloud.js'
 import * as cloudDb from './cloudDb.js'
 import * as localDb from './localDb.js'
 import { translate } from '../../i18n/index.js'
@@ -29,6 +29,7 @@ import {
   applyEvent,
   canContinueReply,
   getContextRounds,
+  getReplyText,
   settleReply,
   toRequestMessages,
 } from './reply.js'
@@ -645,7 +646,11 @@ export const setSessionPinned = (id: string, pinned: boolean) => {
   }
 }
 
+const manuallyNamedSessions = new Set<string>()
+const generatingTitles = new Set<string>()
+
 export const renameSession = (id: string, title: string) => {
+  manuallyNamedSessions.add(id)
   if (get().importingHistory || deletingSessions.has(id)) {
     return
   }
@@ -654,7 +659,7 @@ export const renameSession = (id: string, title: string) => {
     titleRequests.delete(controller)
   }
   if (getSession(id)) {
-    updateSession(id, (session) => ({ ...session, title }))
+    updateSession(id, (session) => ({ ...session, title, titleSource: 'manual' }))
     persist(id)
   } else {
     set((state) => ({
@@ -764,6 +769,9 @@ export const sendMessage = (targetSessionId: string | null) => {
         cloudMode && useCloud.getState().config?.protocol !== 'deepseek'
           ? (text || files[0]?.name || '').slice(0, 60)
           : '',
+      ...(cloudMode && useCloud.getState().config?.protocol !== 'deepseek'
+        ? { titleSource: 'pending' as const }
+        : {}),
       createdAt: now,
       updatedAt: now,
       messages: [],
@@ -1171,6 +1179,59 @@ const waitForRetry = (attempt: number, signal: AbortSignal) =>
     signal.addEventListener('abort', onAbort, { once: true })
   })
 
+const generateSessionTitle = async (
+  sessionId: string,
+  question: UserMessage,
+  reply: AssistantMessage
+) => {
+  const session = getSession(sessionId)
+  const epoch = historyEpoch
+  if (
+    !cloudMode ||
+    session?.titleSource !== 'pending' ||
+    generatingTitles.has(sessionId) ||
+    manuallyNamedSessions.has(sessionId) ||
+    reply.status !== 'done' ||
+    reply.stopReason === 'refusal' ||
+    !getReplyText(reply).trim()
+  ) {
+    return
+  }
+  generatingTitles.add(sessionId)
+  try {
+    const result = (await (
+      await cloudFetch(
+        '/title',
+        cloudJson('POST', {
+          question: question.content || question.files.map((file) => file.name).join(', '),
+          answer: getReplyText(reply),
+        })
+      )
+    ).json()) as { title: string }
+    if (
+      epoch !== historyEpoch ||
+      deletingSessions.has(sessionId) ||
+      manuallyNamedSessions.has(sessionId) ||
+      getSession(sessionId)?.titleSource !== 'pending' ||
+      getSession(sessionId)?.title !== session.title ||
+      typeof result.title !== 'string' ||
+      !result.title.trim()
+    ) {
+      return
+    }
+    updateSession(sessionId, (current) => ({
+      ...current,
+      title: result.title.trim().slice(0, 60),
+      titleSource: 'generated',
+    }))
+    persist(sessionId)
+  } catch {
+    // Keep the provisional title. A later successful reply can retry without interrupting the answer.
+  } finally {
+    generatingTitles.delete(sessionId)
+  }
+}
+
 /**
  * 请求并消费流：先补齐附件的 serverId，再发请求；流式增量按动画帧刷新内存，完成、失败或停止后落盘。
  * 补传失败时回复记为 upload 错误，可重试。
@@ -1318,5 +1379,6 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       ),
     }))
     persist(sessionId)
+    void generateSessionTitle(sessionId, request.question, reply)
   }
 }

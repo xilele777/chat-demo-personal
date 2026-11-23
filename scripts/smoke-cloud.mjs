@@ -78,6 +78,13 @@ const mock = createServer(async (req, res) => {
       .end(JSON.stringify({ error: { message: 'Unknown parameter: stream_options' } }))
     return
   }
+  if (sentToProvider.stream === false) {
+    assert.equal(sentToProvider.tools, undefined)
+    res
+      .writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ choices: [{ message: { content: '云端同步检查' } }] }))
+    return
+  }
   res.writeHead(200, { 'Content-Type': 'text/event-stream' })
   for (const delta of [
     { reasoning_content: '先检查内容。' },
@@ -522,6 +529,8 @@ try {
   assert.equal(sentToProvider.stream_options, undefined)
   console.log('PASS: reasoning effort and modern/legacy OpenAI token parameters')
 
+  const title = await call('/title', 'POST', { question: '同步测试', answer: '同步正常' })
+  assert.deepEqual(await title.json(), { title: '云端同步检查' })
   const { openAIStream } = await import('../worker/upstream.ts')
   let upstreamCancelled = false
   const raw = new ReadableStream({
