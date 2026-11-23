@@ -86,13 +86,42 @@ const mock = createServer(async (req, res) => {
     return
   }
   res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+  const last = sentToProvider.messages.at(-1)
+  const lastText =
+    typeof last.content === 'string' ? last.content : last.content.map((b) => b.text ?? '').join('')
+  if (
+    sentToProvider.tools &&
+    last.role === 'user' &&
+    lastText !== '你好' &&
+    sentToProvider.tool_choice !== 'none'
+  ) {
+    const query = lastText === '它为什么这样？' ? '原始主题 原因' : lastText
+    const args = JSON.stringify({ query })
+    for (const delta of [
+      {
+        tool_calls: [
+          {
+            index: 0,
+            id: 'call_search',
+            type: 'function',
+            function: { name: 'web_search', arguments: args.slice(0, 5) },
+          },
+        ],
+      },
+      { tool_calls: [{ index: 0, function: { arguments: args.slice(5) } }] },
+    ])
+      res.write(`data: ${JSON.stringify({ choices: [{ delta, finish_reason: null }] })}\n\n`)
+    res.end(
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`
+    )
+    return
+  }
+  const sources = last.role === 'tool' ? JSON.parse(last.content).sources : []
   for (const delta of [
     { reasoning_content: '先检查内容。' },
     { content: '你好，' },
     {
-      content:
-        '云端同步正常。' +
-        (sentToProvider.messages[0].content.includes('web search sources') ? '[citation:1]' : ''),
+      content: '云端同步正常。' + (sources?.length ? '[citation:1]' : ''),
     },
   ]) {
     res.write(`data: ${JSON.stringify({ choices: [{ delta, finish_reason: null }] })}\n\n`)
@@ -445,7 +474,8 @@ try {
   const searchStream = await searchResponse.text()
   assert.equal(searchedQuery, '今天的测试消息', searchStream)
   assert.equal(searchCount, 1)
-  assert.equal(sentToProvider.tools, undefined)
+  assert.equal(sentToProvider.tools[0].function.name, 'web_search')
+  assert.equal(sentToProvider.messages.at(-1).role, 'tool')
   assert.match(JSON.stringify(sentToProvider.messages), /今天发布的测试消息/)
   const events = searchStream
     .split('\n\n')
@@ -483,7 +513,8 @@ try {
   assert.match(view.answer.markdown, /\[citation:1\]/)
   const failedSearch = await (await requestSearch('search-failure')).text()
   assert.match(failedSearch, /web_search_tool_result_error/)
-  assert.match(failedSearch, /HTTP 429/)
+  assert.match(failedSearch, /message_stop/)
+  assert.doesNotMatch(failedSearch, /\[citation:/)
   assert.doesNotMatch(failedSearch, /smoke-search/)
   const emptySearch = await (await requestSearch('no-results')).text()
   assert.match(emptySearch, /"content":\[\]/)
@@ -527,10 +558,27 @@ try {
     })
   ).text()
   assert.equal(sentToProvider.stream_options, undefined)
-  console.log('PASS: reasoning effort and modern/legacy OpenAI token parameters')
-
   const title = await call('/title', 'POST', { question: '同步测试', answer: '同步正常' })
   assert.deepEqual(await title.json(), { title: '云端同步检查' })
+  const beforeGreeting = searchCount
+  await (await requestSearch('你好')).text()
+  assert.equal(searchCount, beforeGreeting)
+  await (
+    await call('/anthropic/v1/messages', 'POST', {
+      system: '测试',
+      messages: [
+        { role: 'user', content: '原始主题' },
+        { role: 'assistant', content: '背景回答' },
+        { role: 'user', content: '它为什么这样？' },
+      ],
+      tools: [{ type: 'deepseek_web_search', name: 'deepseek_web_search' }],
+    })
+  ).text()
+  assert.equal(searchedQuery, '原始主题 原因')
+  console.log(
+    'PASS: reasoning effort, modern OpenAI token field, generated titles and context-aware optional search'
+  )
+
   const { openAIStream } = await import('../worker/upstream.ts')
   let upstreamCancelled = false
   const raw = new ReadableStream({

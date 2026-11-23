@@ -102,7 +102,8 @@ export const useSettings = create<Settings>(() => ({
   )
     ? read(KEYS.reasoningEffort)
     : 'auto') as ReasoningEffort,
-  search: read(KEYS.search) === 'true',
+  search:
+    !(typeof __CLOUD_MODE__ !== 'undefined' && __CLOUD_MODE__) && read(KEYS.search) === 'true',
   siderCollapsed: read(KEYS.siderCollapsed) === 'true',
 }))
 
