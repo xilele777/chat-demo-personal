@@ -16,6 +16,7 @@ declare const styles: {
   readonly "collapsedToggles": string;
   readonly "toggleLabel": string;
   readonly "toggle": string;
+  readonly "reasoningSelector": string;
   readonly "selected": string;
   readonly "right": string;
   readonly "sendButton": string;

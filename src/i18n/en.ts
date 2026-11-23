@@ -55,7 +55,9 @@ export const en = {
     'Chats or attachments have not been saved locally. Retry before closing this page.',
   sessionDeleteFailed: 'Unable to delete this chat. Please try again.',
   reasoningEffort: 'Reasoning effort',
-  reasoningAuto: 'Thinking: Auto',
+  reasoningAuto: 'Thinking: Default',
+  reasoningEffortTooltip:
+    'Default uses the model’s preset reasoning effort. Higher effort usually takes more time.',
   reasoning_none: 'Thinking: Off',
   reasoning_minimal: 'Thinking: Minimal',
   reasoning_low: 'Thinking: Low',
@@ -63,7 +65,6 @@ export const en = {
   reasoning_high: 'Thinking: High',
   reasoning_xhigh: 'Thinking: Highest',
   webSearch: 'Web search',
-  webSearchOn: 'Web search on',
   imagePreview: 'Preview image',
   downloadImage: 'Download original',
   settings: 'Settings',

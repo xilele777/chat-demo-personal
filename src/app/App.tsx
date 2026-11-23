@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { cloudMode } from '../services/cloud.js'
 import { useTranslate } from '../i18n/index.js'
 import { useSettings } from '../services/settings.js'
@@ -52,6 +52,18 @@ export const App = () => {
     state.activeId === null ? false : Object.hasOwn(state.streaming, state.activeId)
   )
   const activeId = useChatStore((state) => state.activeId)
+  const loadingKey = !ready ? 'initial' : activeId !== null && !session ? activeId : null
+  const [loadingNoticeKey, setLoadingNoticeKey] = useState<string | null>(null)
+  const loadError = !ready ? initError : sessionLoadError
+
+  useEffect(() => {
+    if (loadingKey === null) {
+      setLoadingNoticeKey(null)
+      return
+    }
+    const timer = setTimeout(() => setLoadingNoticeKey(loadingKey), 600)
+    return () => clearTimeout(timer)
+  }, [loadingKey])
 
   usePreventPageScroll(isMobile)
 
@@ -110,30 +122,32 @@ export const App = () => {
           <div className={styles.content}>
             {siderCollapsed ? <CollapsedSider /> : null}
             {!ready || (activeId !== null && !session) ? (
-              <div className={styles.loadingView}>
+              <div className={styles.loadingView} aria-busy={!loadError}>
                 {isMobile ? <MobileHeader /> : null}
-                <div className={styles.loadingState} role="status" aria-live="polite">
-                  <span>
-                    {(!ready ? initError : sessionLoadError)
-                      ? t(!ready ? 'sessionListLoadFailed' : 'sessionLoadFailed')
-                      : t('sessionLoading')}
-                  </span>
-                  {(!ready ? initError : sessionLoadError) ? (
-                    <Button
-                      variant="outlined"
-                      size="m"
-                      onClick={() => {
-                        if (!ready) {
-                          void initChat()
-                        } else if (activeId !== null) {
-                          selectSession(activeId)
-                        }
-                      }}
-                    >
-                      {t('retry')}
-                    </Button>
-                  ) : null}
-                </div>
+                {loadError || loadingNoticeKey === loadingKey ? (
+                  <div className={styles.loadingState} role="status" aria-live="polite">
+                    <span>
+                      {loadError
+                        ? t(!ready ? 'sessionListLoadFailed' : 'sessionLoadFailed')
+                        : t('sessionLoading')}
+                    </span>
+                    {loadError ? (
+                      <Button
+                        variant="outlined"
+                        size="m"
+                        onClick={() => {
+                          if (!ready) {
+                            void initChat()
+                          } else if (activeId !== null) {
+                            selectSession(activeId)
+                          }
+                        }}
+                      >
+                        {t('retry')}
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : session ? (
               <SessionView

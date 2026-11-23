@@ -48,7 +48,7 @@ const MODEL: ChatModel = 'deepseek-flash'
 /** 所有生成请求统一携带的助手身份说明 */
 const SYSTEM_PROMPT = '该助手为DeepSeek，由深度求索公司创造。'
 /** 保留最近打开的详情；当前会话、生成中及尚未成功保存的会话不淘汰。 */
-const SESSION_CACHE_LIMIT = 5
+const SESSION_CACHE_LIMIT = 10
 /** 安全审核固定开启，所有请求都走扩展模式 */
 const SAFETY_CHECK = { level: 'high' } as const
 /** 服务端判定 file_id 失效后，重新补传并重发的最多次数（不含首次请求） */
@@ -254,6 +254,7 @@ export const syncCloudSessions = async (): Promise<void> => {
     get().importingHistory ||
     unsavedSessions.size ||
     cloudDb.pendingIds().length ||
+    sessionLoads.size ||
     Object.keys(get().streaming).length
   ) {
     return
@@ -266,26 +267,53 @@ export const syncCloudSessions = async (): Promise<void> => {
     get().activeId === before.activeId &&
     !get().importingHistory &&
     !unsavedSessions.size &&
+    !sessionLoads.size &&
     !Object.keys(get().streaming).length
   try {
     const index = await cloudDb.readIndex()
     if (!unchanged()) {
       return
     }
+    const remote = new Map(index.sessions.map((session) => [session.id, session]))
+    const retained = Object.fromEntries(
+      Object.entries(before.sessionCache).filter(([id, session]) => {
+        const summary = remote.get(id)
+        return summary && cloudDb.isSessionCurrent(session, index.generation, summary.revision)
+      })
+    )
     const active =
-      before.activeId && index.sessions.some((s) => s.id === before.activeId)
-        ? await cloudDb.loadSession(before.activeId)
+      before.activeId && remote.has(before.activeId)
+        ? (retained[before.activeId] ??
+          (await cloudDb
+            .loadSession(before.activeId)
+            .then((session) =>
+              session ? settleInterrupted(normalizeSession(session)) : undefined
+            )))
         : undefined
     if (!unchanged()) {
       return
     }
-    // Closed details are discarded; selecting them loads the current cloud version.
+    if (active) {
+      retained[active.id] = active
+    }
+    const summaries = sortSessions(index.sessions.map(toSessionSummary))
+    const sameList =
+      summaries.length === before.sessions.length &&
+      summaries.every(
+        (summary, i) =>
+          summary.id === before.sessions[i].id && sameSummary(summary, before.sessions[i])
+      )
+    const sameCache =
+      Object.keys(retained).length === Object.keys(before.sessionCache).length &&
+      Object.entries(retained).every(([id, session]) => session === before.sessionCache[id])
+    // 只淘汰已修改或已删除的详情，未变化的对话和对象引用继续复用。
     set({
-      sessions: sortSessions(index.sessions.map(toSessionSummary)),
-      sessionCache: active ? { [active.id]: settleInterrupted(normalizeSession(active)) } : {},
+      sessions: sameList ? before.sessions : summaries,
+      sessionCache: sameCache ? before.sessionCache : retained,
       activeId: active?.id ?? null,
       sessionLoadErrors: {},
     })
+    trimSessionCache()
     useCloud.setState({ error: null, lastSyncedAt: Date.now() })
   } catch (error) {
     useCloud.setState({ error: error instanceof Error ? error.message : 'Sync failed' })
@@ -469,6 +497,16 @@ export const initChat = (): Promise<void> => {
           }
         }
         set({ ready: true, sessions: sortSessions(summaries) })
+        if (cloudMode) {
+          // 先绘制列表，再低优先级预热最近两条；不一次下载全部历史。
+          setTimeout(() => {
+            if (epoch === historyEpoch) {
+              get()
+                .sessions.slice(0, 2)
+                .forEach((session) => prefetchSession(session.id))
+            }
+          }, 150)
+        }
         if (cloudMode && unsavedSessions.size) {
           set({
             sessionSaveErrors: Object.fromEntries([...unsavedSessions].map((id) => [id, true])),
@@ -490,7 +528,7 @@ export const initChat = (): Promise<void> => {
 }
 
 /** 同一会话合并并发读取；切换只改变 activeId，旧请求不会把界面切回去。 */
-const ensureSessionLoaded = (id: string): Promise<void> => {
+const ensureSessionLoaded = (id: string, prefetch = false): Promise<void> => {
   if (getSession(id)) {
     return Promise.resolve()
   }
@@ -504,7 +542,7 @@ const ensureSessionLoaded = (id: string): Promise<void> => {
   sessionLoads.set(id, load)
   load.promise = (async () => {
     try {
-      const stored = await db.loadSession(id)
+      const stored = cloudMode ? await cloudDb.loadSession(id, prefetch) : await db.loadSession(id)
       if (epoch !== historyEpoch || sessionLoads.get(id) !== load) {
         return
       }
@@ -625,6 +663,19 @@ export const selectSession = (id: string) => {
     set({ activeId: id })
     void ensureSessionLoaded(id)
     trimSessionCache()
+  }
+}
+
+/** 预加载与点击共用读取任务；不切换当前对话，并限制后台并发。 */
+export const prefetchSession = (id: string) => {
+  if (
+    get().ready &&
+    !get().importingHistory &&
+    !getSession(id) &&
+    sessionLoads.size < 2 &&
+    get().sessions.some((session) => session.id === id)
+  ) {
+    void ensureSessionLoaded(id, true)
   }
 }
 

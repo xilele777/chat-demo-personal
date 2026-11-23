@@ -2,7 +2,8 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { toSessionSummary, type Session, type SessionSummary } from './types.js'
 
 /** IndexedDB 存储结构版本；新增或调整存储、索引时递增。 */
-const DB_VERSION = 12
+const DB_VERSION = 13
+const CLOUD_CACHE_LIMIT = 30
 
 export type PendingCloudSession = { id: string; session: Session }
 
@@ -16,6 +17,11 @@ export type StoredFile = {
 type StoredSessionSummary = SessionSummary & { fileIds: string[] }
 
 interface ChatDB extends DBSchema {
+  cloudSessionCache: {
+    key: string
+    value: { id: string; session: Session; cachedAt: number }
+    indexes: { cachedAt: number }
+  }
   cloudOutbox: { key: string; value: PendingCloudSession }
   /** 当前使用的会话，界面读写都在这里 */
   sessions: { key: string; value: Session }
@@ -77,6 +83,10 @@ const getDB = () =>
       if (!summaries.indexNames.contains('fileIds')) {
         summaries.createIndex('fileIds', 'fileIds', { multiEntry: true })
       }
+      if (!db.objectStoreNames.contains('cloudSessionCache')) {
+        const cache = db.createObjectStore('cloudSessionCache', { keyPath: 'id' })
+        cache.createIndex('cachedAt', 'cachedAt')
+      }
     },
   }).catch((error: unknown) => {
     // 打开失败后允许界面重试，避免一直复用已拒绝的 Promise。
@@ -89,6 +99,38 @@ export const loadSessionSummaries = async (): Promise<SessionSummary[]> =>
 
 export const loadSession = async (id: string): Promise<Session | undefined> =>
   (await getDB()).get('sessions', id)
+
+/** 云端缓存与本地历史分开存储；只有版本校验通过后才能用于展示。 */
+export const loadCachedCloudSession = async (id: string): Promise<Session | undefined> =>
+  (await (await getDB()).get('cloudSessionCache', id))?.session
+
+export const cacheCloudSession = async (session: Session): Promise<void> => {
+  const tx = (await getDB()).transaction('cloudSessionCache', 'readwrite')
+  await Promise.all([
+    (async () => {
+      try {
+        await tx.store.put({ id: session.id, session, cachedAt: Date.now() })
+        let excess = (await tx.store.count()) - CLOUD_CACHE_LIMIT
+        for (
+          let cursor = excess > 0 ? await tx.store.index('cachedAt').openCursor() : null;
+          cursor && excess > 0;
+          cursor = await cursor.continue()
+        ) {
+          await cursor.delete()
+          excess -= 1
+        }
+      } catch (error) {
+        abortTransaction(tx)
+        throw error
+      }
+    })(),
+    tx.done,
+  ])
+}
+
+export const removeCachedCloudSession = async (id: string): Promise<void> => {
+  await (await getDB()).delete('cloudSessionCache', id)
+}
 
 export const loadOutbox = async (): Promise<PendingCloudSession[]> =>
   (await getDB()).getAll('cloudOutbox')

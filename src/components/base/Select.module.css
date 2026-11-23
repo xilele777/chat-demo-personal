@@ -97,4 +97,14 @@
   &:hover {
     background: var(--dsw-alias-interactive-bg-hover);
   }
+
+  &:active {
+    background: var(--dsw-alias-interactive-bg-hover-accent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--dsw-alias-label-primary);
+    outline-offset: -2px;
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }

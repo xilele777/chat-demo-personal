@@ -1,8 +1,13 @@
 import clsx from 'clsx'
-import { memo, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { IconEditOutline16, IconEllipsisOutline16, IconTrashOutline16 } from '../base/icons.js'
-import { renameSession, selectSession, setSessionPinned } from '../../services/chat/store.js'
+import {
+  prefetchSession,
+  renameSession,
+  selectSession,
+  setSessionPinned,
+} from '../../services/chat/store.js'
 import { PinIcon } from '../base/PinIcon.js'
 import type { SessionSummary } from '../../services/chat/types.js'
 import { IconButton } from '../base/IconButton.js'
@@ -21,6 +26,9 @@ export const SessionItem = memo(function SessionItem({
 }) {
   const t = useTranslate()
   const [editing, setEditing] = useState(false)
+  const prefetchTimer = useRef(0)
+  const cancelPrefetch = useCallback(() => window.clearTimeout(prefetchTimer.current), [])
+  useEffect(() => cancelPrefetch, [cancelPrefetch])
   const displayTitle = session.title || t('untitledChat')
 
   if (editing) {
@@ -51,6 +59,12 @@ export const SessionItem = memo(function SessionItem({
   return (
     <div
       className={clsx(styles.item, active && styles.active)}
+      onPointerEnter={() => {
+        cancelPrefetch()
+        prefetchTimer.current = window.setTimeout(() => prefetchSession(session.id), 100)
+      }}
+      onPointerLeave={cancelPrefetch}
+      onFocus={() => prefetchSession(session.id)}
       onClick={() => {
         selectSession(session.id)
         closeMobileSider()

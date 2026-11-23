@@ -23,6 +23,7 @@ import {
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import { IconButton } from '../base/IconButton.js'
 import { Tooltip } from '../base/Tooltip.js'
+import { Select } from '../base/Select.js'
 import { ensureApiKey } from '../settings/settingsDialogState.js'
 import { DragMask, useFileDrop } from './DragMask.js'
 import { showToast } from '../base/toastState.js'
@@ -215,19 +216,18 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
         {/* 深度思考 / 智能搜索开关，tooltip 在按钮上方 */}
         <div ref={togglesRef} className={styles.toggles}>
           {cloudMode && capabilities?.protocol === 'openai' ? (
-            <select
-              className={styles.toggle}
-              aria-label={t('reasoningEffort')}
-              value={selectedEffort}
-              onChange={(event) => setReasoningEffort(event.target.value as typeof reasoningEffort)}
-            >
-              <option value="auto">{t('reasoningAuto')}</option>
-              {effortOptions.map((value) => (
-                <option key={value} value={value}>
-                  {t(`reasoning_${value}`)}
-                </option>
-              ))}
-            </select>
+            <Tooltip content={t('reasoningEffortTooltip')}>
+              <Select
+                className={clsx(styles.toggle, styles.reasoningSelector)}
+                ariaLabel={t('reasoningEffort')}
+                value={selectedEffort}
+                onChange={setReasoningEffort}
+                options={[
+                  { value: 'auto', label: t('reasoningAuto') },
+                  ...effortOptions.map((value) => ({ value, label: t(`reasoning_${value}`) })),
+                ]}
+              />
+            </Tooltip>
           ) : (
             <Tooltip
               content={t(thinkingEnabled ? 'deactivatedThinkTooltip' : 'cloudFeatureUnavailable')}
@@ -252,14 +252,12 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               type="button"
               className={clsx(styles.toggle, searchEnabled && search && styles.selected)}
               disabled={!searchEnabled}
-              aria-label={t('search')}
+              aria-label={t(cloudMode ? 'webSearch' : 'search')}
               aria-pressed={searchEnabled && search}
               onClick={() => setSearch(!search)}
             >
               <IconGlobeLanguageOutline14 />
-              <span className={styles.toggleLabel}>
-                {t(cloudMode ? (search ? 'webSearchOn' : 'webSearch') : 'search')}
-              </span>
+              <span className={styles.toggleLabel}>{t(cloudMode ? 'webSearch' : 'search')}</span>
             </button>
           </Tooltip>
         </div>

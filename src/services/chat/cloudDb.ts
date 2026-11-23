@@ -8,6 +8,7 @@ type Index = {
   sessions: (SessionSummary & { revision: string })[]
 }
 let generation = ''
+let indexedSessions = new Map<string, SessionSummary & { revision: string }>()
 let queue: Promise<unknown> = Promise.resolve()
 const lineage = new Map<string, string>()
 const confirmedFiles = new Set<string>()
@@ -22,9 +23,23 @@ const serial = <T>(run: () => Promise<T>): Promise<T> => {
 
 export const pendingIds = () => [...pending.keys()]
 export const newStamp = (): NonNullable<Session['cloud']> => ({ revision: null, generation })
+/** 内存中的本地修改保存后沿用原 stamp，lineage 记录其已确认的最新版本。 */
+export const isSessionCurrent = (session: Session, remoteGeneration: string, revision: string) => {
+  const stamp = session.cloud
+  return (
+    stamp?.generation === remoteGeneration &&
+    (lineage.get(`${session.id}:${stamp.generation}:${stamp.revision ?? ''}`) ?? stamp.revision) ===
+      revision
+  )
+}
+
+const cacheSession = (session: Session) => {
+  void local.cacheCloudSession(session).catch(local.reportStorageError('cache cloud session'))
+}
 export const readIndex = async (): Promise<Index> => {
   const index = (await (await cloudFetch('/sessions')).json()) as Index
   generation = index.generation
+  indexedSessions = new Map(index.sessions.map((session) => [session.id, session]))
   return index
 }
 
@@ -43,13 +58,29 @@ export const loadSessionSummaries = async (): Promise<SessionSummary[]> => {
   return [...all.values()]
 }
 
-export const loadSession = async (id: string): Promise<Session | undefined> => {
+export const loadSession = async (id: string, prefetch = false): Promise<Session | undefined> => {
   if (pending.has(id)) {
     return pending.get(id)
   }
-  const response = await cloudFetch(`/sessions/${encodeURIComponent(id)}`)
+  const cached = await local.loadCachedCloudSession(id).catch(() => undefined)
+  // 缓存自身的版本必须匹配最新列表；不能用 lineage 将旧内容视为新版本。
+  if (
+    cached?.cloud?.generation === generation &&
+    cached.cloud.revision === indexedSessions.get(id)?.revision
+  ) {
+    cacheSession(cached)
+    return cached
+  }
+  const response = await cloudFetch(`/sessions/${encodeURIComponent(id)}`, {
+    priority: prefetch ? 'low' : 'auto',
+  })
   const body = (await response.json()) as { session: Session; revision: string; generation: string }
-  return { ...body.session, cloud: { revision: body.revision, generation: body.generation } }
+  const session = {
+    ...body.session,
+    cloud: { revision: body.revision, generation: body.generation },
+  }
+  cacheSession(session)
+  return session
 }
 
 async function uploadOriginal(id: string, blob: Blob): Promise<void> {
@@ -123,6 +154,7 @@ export const saveSession = (session: Session, files: local.StoredFile[] = []): P
       )
     ).json()) as { revision: string }
     lineage.set(key, result.revision)
+    cacheSession({ ...data, cloud: { revision: result.revision, generation: source.generation } })
     if (pending.get(session.id) === session) {
       pending.delete(session.id)
       await local.removeOutbox(session.id)
@@ -152,6 +184,8 @@ export const deleteSession = (id: string): Promise<void> =>
     )
     pending.delete(id)
     await local.removeOutbox(id)
+    indexedSessions.delete(id)
+    void local.removeCachedCloudSession(id).catch(local.reportStorageError('remove cloud cache'))
   })
 
 export const loadFile = async (id: string): Promise<Blob | undefined> => {
@@ -188,6 +222,7 @@ export const commitStaging = (): Promise<SessionSummary[]> =>
       )
     ).json()) as { generation: string }
     generation = replaced.generation
+    indexedSessions.clear()
     lineage.clear()
     for (const id of pending.keys()) {
       await local.removeOutbox(id)

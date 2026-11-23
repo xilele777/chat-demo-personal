@@ -73,11 +73,6 @@
   cursor: pointer;
 }
 
-select.toggle {
-  max-width: 150px;
-  cursor: pointer;
-}
-
 .uploading {
   position: absolute;
   inset: 0;
@@ -318,6 +313,12 @@ select.toggle {
   align-items: center;
   gap: 4px;
   margin-left: auto;
+}
+
+.toggle.reasoningSelector {
+  max-width: 160px;
+  padding-right: 34px;
+  justify-content: flex-start;
 }
 
 .sendButton {
