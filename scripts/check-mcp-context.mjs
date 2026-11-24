@@ -77,7 +77,7 @@ assert.equal(catalog.definitions('openai', false).length, 1)
 assert.equal(
   new McpTools([{ ...entries[0], tool: { name: 'small', inputSchema: { type: 'object' } } }], env)
     .deferred,
-  false
+  true
 )
 const largest = entries.toSorted(
   (a, b) =>
@@ -157,9 +157,14 @@ const mock = createServer(async (request, response) => {
         )
     const callName = greeting || completed ? null : remote ? alias : 'mcp_load_tools'
     if (requests.length === 1) {
-      assert.equal(definitions.length, 1)
+      assert.equal(definitions.length, 2)
       assert.equal(definitions[0].name, 'mcp_load_tools')
-      assert.ok(JSON.stringify(body).length < 12000)
+      assert.ok(
+        contextCost(body.system ?? body.messages[0].content) +
+          contextCost(JSON.stringify(body.tools)) <
+          8000
+      )
+      assert.equal(JSON.stringify(body).includes('Parameter documentation.'), false)
     }
     if (remote)
       assert.deepEqual(openai ? remote.parameters : remote.input_schema, target.inputSchema)

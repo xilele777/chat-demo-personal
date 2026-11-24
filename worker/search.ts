@@ -4,6 +4,7 @@ import type {
   WebSearchToolResultBlock,
 } from '../src/services/api/types.js'
 import { HttpError, type Env } from './types.js'
+import { sourceUrl } from './evidence.js'
 
 export const searchAvailable = (env: Env) =>
   env.UPSTREAM_PROTOCOL === 'deepseek' || Boolean(env.TAVILY_API_KEY)
@@ -52,6 +53,14 @@ export async function searchWeb(
   if (!env.TAVILY_API_KEY) {
     throw new HttpError(422, 'Configure the TAVILY_API_KEY secret to enable web search')
   }
+  const maxResults = Number(env.SEARCH_MAX_RESULTS ?? 10)
+  if (!Number.isInteger(maxResults) || maxResults < 1 || maxResults > 20) {
+    throw new HttpError(503, 'Invalid SEARCH_MAX_RESULTS (use 1–20)')
+  }
+  const depth = env.SEARCH_DEPTH ?? 'advanced'
+  if (!['basic', 'advanced'].includes(depth)) {
+    throw new HttpError(503, 'Invalid SEARCH_DEPTH')
+  }
   let endpoint = 'https://api.tavily.com/search'
   if (env.DEV_SEARCH_URL) {
     const url = new URL(env.DEV_SEARCH_URL)
@@ -63,8 +72,13 @@ export async function searchWeb(
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.TAVILY_API_KEY}` },
-    body: JSON.stringify({ query, search_depth: 'basic', max_results: 5, include_answer: false }),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
+    body: JSON.stringify({
+      query,
+      search_depth: depth,
+      max_results: maxResults,
+      include_answer: false,
+    }),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(depth === 'basic' ? 12_000 : 25_000)]),
     redirect: 'manual',
   })
   if (!response.ok) {
@@ -96,16 +110,21 @@ export async function searchWeb(
       } catch {
         return []
       }
-      if (!['http:', 'https:'].includes(url.protocol) || seen.has(url.href)) {
+      if (!['http:', 'https:'].includes(url.protocol)) {
         return []
       }
-      seen.add(url.href)
+      const canonical = sourceUrl(url.href)
+      if (seen.has(canonical)) {
+        return []
+      }
+      seen.add(canonical)
       return [
         {
           type: 'web_search_result' as const,
-          url: url.href,
+          url: canonical,
           title: item.title.slice(0, 300),
-          snippet: item.content.slice(0, 2000),
+          // Keep returned text for request-local lookup; WebTools supplies a small model/UI preview.
+          snippet: item.content.slice(0, 48000),
           site_name: url.hostname.replace(/^www\./, ''),
           site_icon: null,
           page_age: null,
@@ -113,7 +132,7 @@ export async function searchWeb(
         },
       ]
     })
-    .slice(0, 5)
+    .slice(0, maxResults)
 }
 
 export const searchContext = (results: WebSearchResult[]) =>

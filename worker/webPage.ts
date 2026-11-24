@@ -3,16 +3,26 @@ import { validateMcpUrl } from './mcpNet.js'
 import { limitContext, type ContextMessage } from './context.js'
 import { HttpError, type Env } from './types.js'
 import type { WebFetchResult, WebFetchToolResultBlock } from '../src/services/api/types.js'
+import { sourceUrl } from './evidence.js'
 
 export const webPageTool = {
   type: 'function',
   function: {
     name: 'read_web_page',
     description:
-      'Open a public web page and extract its article text when search snippets are insufficient, or when the user asks to read a URL. Use exact source citations from the result. Extraction can fail; do not claim a page was read on failure.',
+      'Read a public page only for a specific missing fact or disputed evidence. Supply focus terms to select relevant verbatim excerpts. Batch independent reads; never re-fetch the same page. Use read_tool_result to inspect omitted text.',
     parameters: {
       type: 'object',
-      properties: { url: { type: 'string', maxLength: 2048 } },
+      properties: {
+        url: { type: 'string', maxLength: 2048 },
+        focus: { type: 'string', maxLength: 400 },
+        mode: {
+          type: 'string',
+          enum: ['quick', 'research'],
+          description:
+            'Select on the first web call only. Use research only for a substantive investigation, comparison or report.',
+        },
+      },
       required: ['url'],
       additionalProperties: false,
     },
@@ -24,22 +34,27 @@ export const publicPageUrl = (value: unknown, env: Env): string => {
     throw new HttpError(422, 'Invalid web page URL')
   }
   const url = new URL(value)
+  url.hash = ''
   if (!['http:', 'https:'].includes(url.protocol)) {
     throw new HttpError(422, 'Use a public HTTP or HTTPS page')
   }
   const checked = new URL(url)
   checked.protocol = 'https:'
   validateMcpUrl(checked.href, { ...env, DEV_AUTH: undefined })
-  url.hash = ''
-  return url.href
+  return sourceUrl(url.href)
 }
 
 export async function readWebPage(
   value: unknown,
   env: Env,
-  signal: AbortSignal
+  signal: AbortSignal,
+  timeoutMs = 20000
 ): Promise<WebFetchResult> {
   const url = publicPageUrl(value, env)
+  const maxCharacters = Number(env.PAGE_MAX_CHARACTERS ?? 48000)
+  if (!Number.isInteger(maxCharacters) || maxCharacters < 1000 || maxCharacters > 200000) {
+    throw new HttpError(503, 'Invalid PAGE_MAX_CHARACTERS')
+  }
   if (!env.TAVILY_API_KEY) {
     throw new HttpError(422, 'Configure TAVILY_API_KEY to read web pages')
   }
@@ -57,12 +72,12 @@ export async function readWebPage(
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.TAVILY_API_KEY}` },
     body: JSON.stringify({
       urls: [url],
-      extract_depth: 'basic',
+      extract_depth: 'advanced',
       format: 'markdown',
       include_images: false,
       timeout: 15,
     }),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(20000)]),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
     redirect: 'manual',
   })
   if (!response.ok) {
@@ -87,7 +102,15 @@ export async function readWebPage(
     content: {
       type: 'document',
       title,
-      source: { type: 'text', media_type: 'text/plain', data: result.raw_content.slice(0, 12000) },
+      source: {
+        type: 'text',
+        media_type: 'text/plain',
+        data:
+          result.raw_content.length > maxCharacters
+            ? result.raw_content.slice(0, maxCharacters) +
+              '\n[Page truncated at the configured extraction limit.]'
+            : result.raw_content,
+      },
     },
     published_at: null,
   }
@@ -98,7 +121,8 @@ export async function* webPageEvents(
   env: Env,
   signal: AbortSignal,
   state: { index: number },
-  sources: Map<string, number>
+  sources: Map<string, number>,
+  timeoutMs = 20000
 ): AsyncGenerator<Record<string, unknown>, { text: string; isError: boolean }> {
   const url = typeof value === 'string' ? value.slice(0, 2048) : ''
   const call = {
@@ -106,12 +130,13 @@ export async function* webPageEvents(
     kind: 'deep_search' as const,
     input: { action: 'open_page' as const, url },
   }
-  yield { type: 'content_block_start', index: ++state.index, content_block: call }
-  yield { type: 'content_block_stop', index: state.index }
+  const callIndex = ++state.index
+  yield { type: 'content_block_start', index: callIndex, content_block: call }
+  yield { type: 'content_block_stop', index: callIndex }
   let content: WebFetchToolResultBlock['content']
   let result: { text: string; isError: boolean }
   try {
-    content = await readWebPage(value, env, signal)
+    content = await readWebPage(value, env, signal, timeoutMs)
     if (!sources.has(content.url)) {
       sources.set(content.url, sources.size + 1)
     }
@@ -138,9 +163,10 @@ export async function* webPageEvents(
       isError: true,
     }
   }
+  const resultIndex = ++state.index
   yield {
     type: 'content_block_start',
-    index: ++state.index,
+    index: resultIndex,
     content_block: {
       type: 'web_fetch_tool_result',
       tool_use_id: call.id,
@@ -148,7 +174,7 @@ export async function* webPageEvents(
       content,
     },
   }
-  yield { type: 'content_block_stop', index: state.index }
+  yield { type: 'content_block_stop', index: resultIndex }
   return result
 }
 
@@ -189,21 +215,49 @@ export const limitWebContext = <T extends ContextMessage>(
           text?: string
           query?: string
           sources?: { excerpt?: string }[]
+          result_id?: string
+          content?: { type?: string; text?: string }[]
+          truncated?: boolean
+          offset?: number
+          next_offset?: number
         }
         try {
           content = JSON.parse(message.content)
         } catch {
           continue
         }
-        if (content?.type === 'web_page' && content.text) {
+        if (
+          content?.text &&
+          (content.type === 'web_page' || content.type === 'tool_result_excerpt')
+        ) {
           content.text = content.text.slice(0, Math.floor(content.text.length / 2))
+          content.truncated = true
+          if (content.type === 'tool_result_excerpt') {
+            content.next_offset = (content.offset ?? 0) + content.text.length
+          }
           shortened = true
         } else if (typeof content?.query === 'string' && Array.isArray(content.sources)) {
           for (const source of content.sources) {
             if (source.excerpt) {
               source.excerpt = source.excerpt.slice(0, Math.floor(source.excerpt.length / 2))
               shortened = true
+              content.truncated = true
             }
+          }
+        } else if (content?.result_id && Array.isArray(content.content)) {
+          // Cached MCP text can be reduced without cutting JSON syntax or losing the full result.
+          for (const block of content.content) {
+            if (typeof block.text === 'string' && block.text.length) {
+              block.text = block.text.slice(0, Math.floor(block.text.length / 2))
+              content.truncated = true
+              shortened = true
+            }
+          }
+          // Structured content can dominate even when text blocks are small; read it from the cache.
+          if ('structuredContent' in content) {
+            delete content.structuredContent
+            content.truncated = true
+            shortened = true
           }
         }
         message.content = JSON.stringify(content)

@@ -181,17 +181,29 @@ const mock = createServer(async (req, res) => {
   const last = sentToProvider.messages.at(-1)
   const lastText =
     typeof last.content === 'string' ? last.content : last.content.map((b) => b.text ?? '').join('')
+  const question = [...sentToProvider.messages]
+    .reverse()
+    .find((message) => message.role === 'user')?.content
+  const remoteDone = sentToProvider.messages.some(
+    (message) => message.role === 'tool' && message.tool_call_id === 'call_mcp'
+  )
   if (
-    last.role === 'user' &&
-    ['mcp-read', 'mcp-write'].includes(lastText) &&
+    ['mcp-read', 'mcp-write'].includes(question) &&
+    !remoteDone &&
     sentToProvider.tool_choice !== 'none'
   ) {
     const target = sentToProvider.tools?.find((tool) =>
-      tool.function.description.includes(lastText === 'mcp-read' ? 'Read a note' : 'Write a note')
+      tool.function.description.includes(question === 'mcp-read' ? 'Read a note' : 'Write a note')
     )
-    if (target) {
+    const catalog = sentToProvider.messages[0].content
+    const alias = catalog.match(
+      new RegExp('(mcp_\\d+):[^\\n]* / ' + (question === 'mcp-read' ? 'read_note' : 'write_note'))
+    )?.[1]
+    if (target || alias) {
+      const name = target ? target.function.name : 'mcp_load_tools'
+      const args = target ? { query: 'note' } : { names: [alias] }
       res.end(
-        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_mcp', type: 'function', function: { name: target.function.name, arguments: '{"query":"note"}' } }] }, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 100, completion_tokens: 10 } })}\n\ndata: [DONE]\n\n`
+        `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: target ? 'call_mcp' : 'load_mcp', type: 'function', function: { name, arguments: JSON.stringify(args) } }] }, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 100, completion_tokens: 10 } })}\n\ndata: [DONE]\n\n`
       )
       return
     }

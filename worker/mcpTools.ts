@@ -1,6 +1,7 @@
 import type { ConnectedMcpTool } from './mcp.js'
 import { contextCost } from './context.js'
 import type { Env } from './types.js'
+import { tokenBudgets } from './policy.js'
 
 const definition = (entry: ConnectedMcpTool) => ({
   name: entry.alias,
@@ -15,7 +16,7 @@ const definition = (entry: ConnectedMcpTool) => ({
 export class McpTools {
   readonly deferred: boolean
   readonly loadName = 'mcp_load_tools'
-  readonly maxLoads = 6
+  readonly maxLoads = 12
   private active: ConnectedMcpTool[]
   private readonly schemaBudget: number
   private readonly catalogBudget: number
@@ -24,12 +25,10 @@ export class McpTools {
     private readonly tools: ConnectedMcpTool[],
     env: Env
   ) {
-    const budget = Number(env.MAX_INPUT_TOKENS ?? 64000)
+    const budget = tokenBudgets(env).input
     this.schemaBudget = Math.min(12000, Math.floor(budget / 3))
     this.catalogBudget = Math.min(4000, Math.floor(budget / 8))
-    this.deferred =
-      tools.length > 16 ||
-      contextCost(JSON.stringify(tools.map(definition))) > Math.min(6000, Math.floor(budget / 4))
+    this.deferred = tools.length > 0
     this.active = this.deferred ? [] : tools
   }
 
@@ -40,7 +39,7 @@ export class McpTools {
     const lines: string[] = []
     let cost = 0
     for (const entry of this.tools) {
-      const line = `${entry.alias}: ${entry.server.name} / ${entry.tool.name}`
+      const line = `${entry.alias}: ${entry.server.name} / ${entry.tool.name} — ${(entry.tool.description ?? '').slice(0, 100)}`
       const next = contextCost(line) + 1
       if (cost + next > this.catalogBudget) {
         break
@@ -80,6 +79,10 @@ export class McpTools {
         ? { type: 'function', function: { name, description, parameters } }
         : { name, description, input_schema: parameters }
     )
+  }
+
+  isActive(name: string): boolean {
+    return this.active.some((entry) => entry.alias === name)
   }
 
   load(input: Record<string, unknown>): Record<string, unknown> {

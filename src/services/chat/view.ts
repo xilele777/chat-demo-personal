@@ -195,14 +195,10 @@ export const buildReplyView = (reply: AssistantMessage, streaming: boolean): Rep
   let mergedThinking: ThinkingStep | null = null
   let pendingText: { index: number; text: string; citations?: TextCitation[] }[] = []
 
-  // 来源编号按搜索结果、打开的网页在回复中出现的顺序，与正文引用无关
+  // Parallel calls finish out of order: register sources in result arrival order, matching the server.
   for (const block of reply.blocks) {
-    if (block.type !== 'server_tool_use') {
-      continue
-    }
-    const result = results.get(block.id)
-    if (result?.type === 'web_search_tool_result') {
-      for (const item of result.content) {
+    if (block.type === 'web_search_tool_result') {
+      for (const item of block.content) {
         if (item.type === 'web_search_result') {
           const source = registry.add(item.url, item.title, item.page_age, item)
           if (source && !searchResults.includes(source)) {
@@ -211,11 +207,11 @@ export const buildReplyView = (reply: AssistantMessage, streaming: boolean): Rep
         }
       }
     } else if (
-      result?.type === 'web_fetch_tool_result' &&
-      result.content.type === 'web_fetch_result' &&
+      block.type === 'web_fetch_tool_result' &&
+      block.content.type === 'web_fetch_result' &&
       block.kind === 'deep_search'
     ) {
-      registry.add(result.content.url, result.content.content.title, result.content.published_at)
+      registry.add(block.content.url, block.content.content.title, block.content.published_at)
     }
   }
 

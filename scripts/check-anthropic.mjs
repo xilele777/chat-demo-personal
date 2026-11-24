@@ -50,10 +50,35 @@ const mock = createServer(async (request, response) => {
   assert.equal(request.headers['x-api-key'], 'model-key')
   modelRequests.push(body)
   const result = body.messages.at(-1).content
-  const afterTool = Array.isArray(result) && result.some((block) => block.type === 'tool_result')
+  const afterTool =
+    Array.isArray(result) &&
+    result.some((block) => block.type === 'tool_result' && block.tool_use_id === 'native-call')
   response.writeHead(200, { 'Content-Type': 'text/event-stream' })
   const event = (value) =>
     response.write(`event: ${value.type}\ndata: ${JSON.stringify(value)}\n\n`)
+  const remote = body.tools?.find((tool) => tool.name === 'mcp_0')
+  if (!remote) {
+    event({ type: 'message_start', message: { usage: { input_tokens: 10, output_tokens: 0 } } })
+    event({
+      type: 'content_block_start',
+      index: 0,
+      content_block: {
+        type: 'tool_use',
+        id: 'load',
+        name: 'mcp_load_tools',
+        input: { names: ['mcp_0'] },
+      },
+    })
+    event({ type: 'content_block_stop', index: 0 })
+    event({
+      type: 'message_delta',
+      delta: { stop_reason: 'tool_use' },
+      usage: { output_tokens: 2 },
+    })
+    event({ type: 'message_stop' })
+    response.end()
+    return
+  }
   event({
     type: 'message_start',
     message: {
@@ -89,7 +114,7 @@ const mock = createServer(async (request, response) => {
     event({
       type: 'content_block_start',
       index: 1,
-      content_block: { type: 'tool_use', id: 'native-call', name: body.tools[0].name, input: {} },
+      content_block: { type: 'tool_use', id: 'native-call', name: remote.name, input: {} },
     })
     event({
       type: 'content_block_delta',
@@ -190,14 +215,14 @@ const run = async () => {
   assert.deepEqual(
     events.findLast((event) => event.type === 'message_delta' && event.delta.stop_reason).usage,
     {
-      input_tokens: 32,
+      input_tokens: 42,
       cache_read_input_tokens: 4,
       cache_creation_input_tokens: 2,
-      output_tokens: 14,
+      output_tokens: 16,
     }
   )
-  assert.equal(modelRequests[1].messages.at(-2).content[0].signature, 'signed-thinking')
-  assert.equal(modelRequests[1].messages.at(-1).content[0].type, 'tool_result')
+  assert.equal(modelRequests[2].messages.at(-2).content[0].signature, 'signed-thinking')
+  assert.equal(modelRequests[2].messages.at(-1).content[0].type, 'tool_result')
   assert.equal(approvals.size, 0)
   return events
 }

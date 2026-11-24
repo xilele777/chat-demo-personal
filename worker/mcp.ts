@@ -336,13 +336,26 @@ export async function connectMcpTools(env: Env, signal: AbortSignal) {
   const connections: Client[] = []
   const tools: ConnectedMcpTool[] = []
   const failures: string[] = []
-  for (const server of (await readServers(env)).filter((server) => server.enabled)) {
-    let client: Client | undefined
-    try {
-      client = await connect(server, env, signal)
-      const available = await listTools(client, signal)
+  const servers = (await readServers(env)).filter((server) => server.enabled)
+  const settled = await Promise.allSettled(
+    servers.map(async (server) => {
+      let client: Client | undefined
+      try {
+        client = await connect(server, env, signal)
+        const available = await listTools(client, signal)
+        return { client, available }
+      } catch (error) {
+        await client?.close().catch(() => {})
+        throw error
+      }
+    })
+  )
+  for (const [index, result] of settled.entries()) {
+    const server = servers[index]
+    if (result.status === 'fulfilled') {
+      const { client, available } = result.value
       connections.push(client)
-      // Only tools already seen and enabled by the owner enter the model's tool list.
+      // Keep aliases deterministic even when connection discovery finishes out of order.
       for (const tool of available.filter(
         (tool) =>
           server.tools.some((known) => known.name === tool.name) &&
@@ -350,14 +363,13 @@ export async function connectMcpTools(env: Env, signal: AbortSignal) {
       )) {
         tools.push({ alias: `mcp_${tools.length}`, server, tool, client })
       }
-    } catch (error) {
-      await client?.close().catch(() => {})
-      if (signal.aborted) {
-        await Promise.all(connections.map((connection) => connection.close().catch(() => {})))
-        throw error
-      }
-      failures.push(`${server.name}: ${errorMessage(error, server)}`)
+    } else {
+      failures.push(`${server.name}: ${errorMessage(result.reason, server)}`)
     }
+  }
+  if (signal.aborted) {
+    await Promise.all(connections.map((connection) => connection.close().catch(() => {})))
+    signal.throwIfAborted()
   }
   return {
     tools,
@@ -438,11 +450,22 @@ export async function* runMcpTool(
     const text = JSON.stringify({
       content: result.content,
       ...(result.structuredContent ? { structuredContent: result.structuredContent } : {}),
-    }).slice(0, 16000)
+    })
     const isError = result.isError === true
     yield {
       type: 'mcp_tool_status',
-      block: { ...block, status: isError ? 'error' : 'done', output: text },
+      block: {
+        ...block,
+        status: isError ? 'error' : 'done',
+        output:
+          text.length > 48000
+            ? JSON.stringify({
+                text: text.slice(0, 48000),
+                truncated: true,
+                message: 'The model can inspect the full cached result during this request.',
+              })
+            : text,
+      },
     }
     return { text, isError }
   } catch (error) {

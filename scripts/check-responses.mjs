@@ -132,34 +132,28 @@ const mock = createServer(async (request, response) => {
     for await (const chunk of request) raw += chunk
     const body = JSON.parse(raw)
     if (request.url === '/search') {
-      response
-        .writeHead(200, { 'Content-Type': 'application/json' })
-        .end(
-          JSON.stringify({
-            results: [
-              { title: '搜索摘要', url: 'https://example.com/source', content: '只有摘要' },
-            ],
-          })
-        )
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(
+        JSON.stringify({
+          results: [{ title: '搜索摘要', url: 'https://example.com/source', content: '只有摘要' }],
+        })
+      )
       return
     }
     if (request.url === '/extract') {
       extracts++
       assert.deepEqual(body.urls, ['https://example.com/source'])
-      response
-        .writeHead(200, { 'Content-Type': 'application/json' })
-        .end(
-          JSON.stringify(
-            failRead
-              ? {
-                  results: [],
-                  failed_results: [{ url: body.urls[0], error: 'must not leak credentials' }],
-                }
-              : {
-                  results: [{ url: body.urls[0], raw_content: '# 抓取标题\n正文中的独特证据：42' }],
-                }
-          )
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(
+        JSON.stringify(
+          failRead
+            ? {
+                results: [],
+                failed_results: [{ url: body.urls[0], error: 'must not leak credentials' }],
+              }
+            : {
+                results: [{ url: body.urls[0], raw_content: '# 抓取标题\n正文中的独特证据：42' }],
+              }
         )
+      )
       return
     }
     assert.equal(request.url, '/v1/responses')
@@ -168,14 +162,15 @@ const mock = createServer(async (request, response) => {
     assert.equal(body.reasoning.summary, 'detailed')
     assert.equal(body.stream_options, undefined)
     assert.equal(body.max_completion_tokens, undefined)
+    assert.equal(body.input[0].role, 'developer')
+    assert.match(body.input[0].content, /Test|Generate a short/)
+    assert.equal(body.instructions, undefined)
     if (!body.stream) {
-      response
-        .writeHead(200, { 'Content-Type': 'application/json' })
-        .end(
-          JSON.stringify({
-            output: [{ type: 'message', content: [{ type: 'output_text', text: '测试标题' }] }],
-          })
-        )
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(
+        JSON.stringify({
+          output: [{ type: 'message', content: [{ type: 'output_text', text: '测试标题' }] }],
+        })
+      )
       return
     }
     response.writeHead(200, { 'Content-Type': 'text/event-stream' })
