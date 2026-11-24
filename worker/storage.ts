@@ -1,4 +1,4 @@
-import { HttpError, json, readSession, validId, type Env } from './types.js'
+import { HttpError, json, readJsonObject, readSession, validId, type Env } from './types.js'
 import { searchSession, type SearchableSession } from '../src/services/chat/search.js'
 
 const conflict = () =>
@@ -53,7 +53,7 @@ export async function storage(request: Request, env: Env, path: string): Promise
     })
   }
   if (path === '/api/history' && request.method === 'PUT') {
-    const body = (await request.json()) as { revision: string; sessions: unknown[] }
+    const body = await readJsonObject(request)
     if (!Array.isArray(body.sessions) || typeof body.revision !== 'string') {
       throw new HttpError(400, 'Invalid history')
     }
@@ -110,13 +110,17 @@ export async function storage(request: Request, env: Env, path: string): Promise
       })
     }
     if (request.method === 'PUT') {
-      const body = (await request.json()) as {
+      const body = (await readJsonObject(request)) as {
         session: unknown
         revision: string | null
         generation: string
       }
       const session = readSession(body.session)
-      if (session.id !== id || typeof body.generation !== 'string') {
+      if (
+        session.id !== id ||
+        typeof body.generation !== 'string' ||
+        !(body.revision === null || typeof body.revision === 'string')
+      ) {
         throw new HttpError(400, 'Invalid session ID or generation')
       }
       const revision = crypto.randomUUID()
@@ -146,7 +150,10 @@ export async function storage(request: Request, env: Env, path: string): Promise
       return json({ revision })
     }
     if (request.method === 'DELETE') {
-      const body = (await request.json()) as { revision: string; generation: string }
+      const body = await readJsonObject(request)
+      if (typeof body.revision !== 'string' || typeof body.generation !== 'string') {
+        throw new HttpError(400, 'Revision and generation are required')
+      }
       const result =
         await env.DB.prepare(`UPDATE sessions SET deleted = 1, revision = ?, data = '{}'
         WHERE id = ? AND revision = ? AND deleted = 0

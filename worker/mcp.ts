@@ -1,7 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
-import { HttpError, json, validId, type Env } from './types.js'
+import { HttpError, json, readJsonObject, validId, type Env } from './types.js'
 import type { McpServer, McpToolBlock } from '../src/services/mcpTypes.js'
 import { validateMcpUrl } from './mcpNet.js'
 import {
@@ -152,7 +152,7 @@ export async function mcpRoutes(
   }
   const approval = path.match(/^\/api\/mcp\/approvals\/([a-zA-Z0-9_-]+)$/)
   if (approval && request.method === 'POST') {
-    const body = (await request.json()) as { approved?: unknown }
+    const body = await readJsonObject(request)
     if (typeof body.approved !== 'boolean') {
       throw new HttpError(400, 'Approval decision is required')
     }
@@ -188,7 +188,7 @@ export async function mcpRoutes(
   if (!request.headers.get('Content-Type')?.includes('application/json')) {
     throw new HttpError(415, 'JSON is required')
   }
-  const body = (await request.json()) as Partial<McpServer> & { token?: string }
+  const body = (await readJsonObject(request)) as Partial<McpServer> & { token?: string }
   if (
     typeof body.name !== 'string' ||
     !body.name.trim() ||

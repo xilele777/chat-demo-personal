@@ -1,6 +1,6 @@
 import { readServerSentEvents } from '../src/services/api/sse.js'
 import { providerErrorMessage } from '../src/services/api/errorMessage.js'
-import { HttpError, json, type Env } from './types.js'
+import { HttpError, json, readJsonObject, type Env } from './types.js'
 import { reasoningEfforts } from './config.js'
 import { limitContext, CONTINUE_PROMPT } from './context.js'
 import { connectMcpTools } from './mcp.js'
@@ -836,7 +836,7 @@ export async function* anthropicReply(body: ChatRequest, env: Env, signal: Abort
 export async function upstream(request: Request, env: Env, path: string): Promise<Response | null> {
   const deepseek = env.UPSTREAM_PROTOCOL === 'deepseek'
   if (path === '/api/title' && request.method === 'POST') {
-    return generateTitle(await request.json(), env, request.signal)
+    return generateTitle(await readJsonObject(request), env, request.signal)
   }
   if (path === '/api/models' && request.method === 'GET') {
     try {
@@ -911,10 +911,27 @@ export async function upstream(request: Request, env: Env, path: string): Promis
     })
   }
   if (path === '/api/anthropic/v1/messages' && request.method === 'POST') {
-    const body = (await request.json()) as ChatRequest
-    if (!Array.isArray(body.messages)) {
+    const body = (await readJsonObject(request)) as ChatRequest
+    if (
+      (body.system !== undefined && typeof body.system !== 'string') ||
+      !Array.isArray(body.messages) ||
+      body.messages.some(
+        (message) =>
+          !message ||
+          typeof message !== 'object' ||
+          !['user', 'assistant', 'latest_reminder'].includes(message.role) ||
+          !(
+            typeof message.content === 'string' ||
+            (Array.isArray(message.content) &&
+              message.content.every(
+                (block) => block && typeof block === 'object' && typeof block.type === 'string'
+              ))
+          )
+      )
+    ) {
       throw new HttpError(400, 'Messages are required')
     }
+    body.system ??= ''
     if (body.model !== undefined) {
       if (
         typeof body.model !== 'string' ||

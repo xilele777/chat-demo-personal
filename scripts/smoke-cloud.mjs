@@ -368,6 +368,16 @@ try {
   assert.match(login.headers.get('Set-Cookie'), /HttpOnly/)
   cookie = login.headers.get('Set-Cookie').split(';')[0]
   assert.equal((await (await call('/auth')).json()).authenticated, true)
+  for (const route of [
+    '/history',
+    '/sessions/invalid',
+    '/anthropic/v1/messages',
+    '/mcp/approvals/invalid',
+  ]) {
+    const method = route === '/history' || route.startsWith('/sessions/') ? 'PUT' : 'POST'
+    assert.equal((await call(route, method, null)).status, 400, route)
+  }
+  console.log('PASS: malformed JSON containers are rejected before storage or tool execution')
   await authorize(new Request(`${origin}/api/config`, { headers: { Cookie: cookie } }), {
     APP_PASSWORD: password,
   })

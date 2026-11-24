@@ -129,6 +129,9 @@ const readBlock = (value: unknown): OutputBlockStart | null => {
         content.type !== 'web_fetch_result' ||
         !isString(content.url) ||
         !isRecord(content.content) ||
+        !isRecord(content.content.source) ||
+        content.content.source.type !== 'text' ||
+        !isString(content.content.source.data) ||
         !isNullableString(content.content.title) ||
         !isNullableString(content.published_at)
       ) {

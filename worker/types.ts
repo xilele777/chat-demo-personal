@@ -1,3 +1,5 @@
+import { validSessionStructure } from './sessionValidation.js'
+
 export type Protocol = 'deepseek' | 'anthropic' | 'openai'
 
 export interface Env {
@@ -59,19 +61,32 @@ export const json = (value: unknown, status = 200) =>
 
 export const validId = (value: string) => /^[a-zA-Z0-9_-]{1,160}$/.test(value)
 
+export async function readJsonObject(request: Request): Promise<Record<string, unknown>> {
+  let value: unknown
+  try {
+    value = await request.json()
+  } catch {
+    throw new HttpError(400, 'Invalid JSON body')
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new HttpError(400, 'A JSON object is required')
+  }
+  return value as Record<string, unknown>
+}
+
 export const readSession = (value: unknown): CloudSession => {
   const s = value as CloudSession | null
   if (
     !s ||
-    !validId(s.id ?? '') ||
+    typeof s !== 'object' ||
+    Array.isArray(s) ||
+    typeof s.id !== 'string' ||
+    !validId(s.id) ||
     typeof s.title !== 'string' ||
     !Number.isFinite(s.createdAt) ||
     !Number.isFinite(s.updatedAt) ||
     (s.pinned !== undefined && typeof s.pinned !== 'boolean') ||
-    !Array.isArray(s.messages) ||
-    s.messages.some(
-      (m) => !m || typeof m.id !== 'string' || !['user', 'assistant'].includes(String(m.role))
-    )
+    !validSessionStructure(s as unknown as Record<string, unknown>)
   ) {
     throw new HttpError(400, 'Invalid session')
   }

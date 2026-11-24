@@ -1,6 +1,6 @@
 import { publicConfig } from './config.js'
 import { SignJWT, jwtVerify } from 'jose'
-import { HttpError, json, type Env } from './types.js'
+import { HttpError, json, readJsonObject, type Env } from './types.js'
 
 const SESSION_SECONDS = 30 * 24 * 60 * 60
 const encoder = new TextEncoder()
@@ -89,7 +89,7 @@ export async function authentication(
     if (!request.headers.get('Content-Type')?.includes('application/json')) {
       throw new HttpError(415, 'JSON is required')
     }
-    const body = (await request.json()) as { password?: unknown }
+    const body = await readJsonObject(request)
     if (typeof body.password !== 'string' || body.password.length > 1024) {
       throw new HttpError(400, 'Invalid password')
     }
