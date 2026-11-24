@@ -3,7 +3,9 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import { HttpError, json, readJsonObject, validId, type Env } from './types.js'
 import type { McpServer, McpToolBlock } from '../src/services/mcpTypes.js'
-import { validateMcpUrl } from './mcpNet.js'
+import { validateMcpUrl, limitMcpResponse } from './mcpNet.js'
+import { toolResultLimits } from './policy.js'
+import { mcpResultText } from './toolResults.js'
 import {
   beginAuthorization,
   finishAuthorization,
@@ -50,6 +52,7 @@ async function connect(
 ) {
   const url = validateMcpUrl(server.url, env)
   const client = new Client({ name: 'personal-chat', version: '0.1.3' }, { capabilities: {} })
+  const limits = toolResultLimits(env)
   const transport = new StreamableHTTPClientTransport(url, {
     reconnectionOptions: {
       maxRetries: 0,
@@ -95,7 +98,7 @@ async function connect(
       if (response.status >= 300 && response.status < 400) {
         throw new HttpError(502, 'MCP redirects are not allowed. Use the final endpoint URL.')
       }
-      return response
+      return limitMcpResponse(response, limits.responseBytes)
     },
   })
   try {
@@ -399,7 +402,10 @@ export async function* runMcpTool(
   input: Record<string, unknown>,
   env: Env,
   signal: AbortSignal
-): AsyncGenerator<Record<string, unknown>, { text: string; isError: boolean; denied?: boolean }> {
+): AsyncGenerator<
+  Record<string, unknown>,
+  { text: string; isError: boolean; denied?: boolean; uncertain?: boolean }
+> {
   const block: McpToolBlock = {
     type: 'mcp_tool',
     id: crypto.randomUUID(),
@@ -409,6 +415,7 @@ export async function* runMcpTool(
     status: 'running',
   }
   let approvalId: string | undefined
+  let dispatched = false
   try {
     if (entry.tool.annotations?.readOnlyHint !== true) {
       approvalId = crypto.randomUUID()
@@ -443,15 +450,19 @@ export async function* runMcpTool(
     }
     yield { type: 'mcp_tool_status', block }
     signal.throwIfAborted()
+    dispatched = true
     const result = await entry.client.callTool(
       { name: entry.tool.name, arguments: input },
       undefined,
       { signal, timeout: 30_000 }
     )
-    const text = JSON.stringify({
-      content: result.content,
-      ...(result.structuredContent ? { structuredContent: result.structuredContent } : {}),
-    })
+    if (!Array.isArray(result.content)) {
+      throw new HttpError(
+        502,
+        'MCP did not return a completed tool result. The operation may have executed; verify its outcome before retrying.'
+      )
+    }
+    const text = mcpResultText(result)
     const isError = result.isError === true
     yield {
       type: 'mcp_tool_status',
@@ -463,19 +474,23 @@ export async function* runMcpTool(
             ? JSON.stringify({
                 text: text.slice(0, 48000),
                 truncated: true,
-                message: 'The model can inspect the full cached result during this request.',
+                message: 'Only bounded excerpts may be available to the model during this request.',
               })
             : text,
       },
     }
-    return { text, isError }
+    return { text, isError, uncertain: isError && entry.tool.annotations?.readOnlyHint !== true }
   } catch (error) {
     if (signal.aborted) {
       throw error
     }
     const text = errorMessage(error, entry.server)
     yield { type: 'mcp_tool_status', block: { ...block, status: 'error', output: text } }
-    return { text, isError: true }
+    return {
+      text,
+      isError: true,
+      uncertain: dispatched && entry.tool.annotations?.readOnlyHint !== true,
+    }
   } finally {
     if (approvalId) {
       await env.DB.prepare('DELETE FROM mcp_approvals WHERE id = ?').bind(approvalId).run()

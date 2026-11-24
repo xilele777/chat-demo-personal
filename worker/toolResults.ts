@@ -1,43 +1,112 @@
 import { contextCost } from './context.js'
-import { tokenBudgets } from './policy.js'
+import { tokenBudgets, toolResultLimits } from './policy.js'
 import type { Env } from './types.js'
+
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+
+/** This tool bridge supports textual evidence, not base64 image/audio tokens. */
+export const mcpResultText = (result: Record<string, unknown>): string =>
+  JSON.stringify({
+    content: Array.isArray(result.content)
+      ? result.content.map((block) => {
+          if (!record(block)) {
+            return block
+          }
+          if (block.type === 'image' || block.type === 'audio') {
+            const metadata = { ...block }
+            delete metadata.data
+            return {
+              ...metadata,
+              binary_omitted: true,
+              message: 'Binary content is not available as textual evidence.',
+            }
+          }
+          if (block.type === 'resource' && record(block.resource) && 'blob' in block.resource) {
+            const resource = { ...block.resource }
+            delete resource.blob
+            return { ...block, resource, binary_omitted: true }
+          }
+          return block
+        })
+      : [],
+    ...(result.structuredContent !== undefined
+      ? { structuredContent: result.structuredContent }
+      : {}),
+  })
 
 /** Request-local full results: large payloads are inspected in slices without repeating remote actions. */
 export class ToolResults {
   readonly name = 'read_tool_result'
   private readonly results = new Map<string, string>()
   private readonly budget: number
+  private readonly limits
+  private bytes = 0
   constructor(env: Env) {
     this.budget = Math.min(3000, Math.floor(tokenBudgets(env).input / 8))
+    this.limits = toolResultLimits(env)
+  }
+  get size() {
+    return { bytes: this.bytes, entries: this.results.size }
   }
   remember(text: string, preview = text): string {
-    const id = crypto.randomUUID()
-    this.results.set(id, text)
+    const bytes = text.length * 2
+    const reason =
+      bytes > this.limits.resultBytes
+        ? 'result_limit'
+        : this.bytes + bytes > this.limits.cacheBytes
+          ? 'cache_limit'
+          : this.results.size >= this.limits.entries
+            ? 'entry_limit'
+            : undefined
+    const id = reason ? undefined : crypto.randomUUID()
+    if (id) {
+      this.results.set(id, text)
+      this.bytes += bytes
+    }
+    const metadata = id
+      ? { result_id: id }
+      : {
+          cache_status: 'not_cached',
+          cache_reason: reason,
+          truncated: true,
+          message: 'Cache limit reached; omitted data unavailable. Do not replay actions.',
+        }
     if (preview !== text || contextCost(text) <= this.budget) {
       try {
         const value = JSON.parse(preview)
         if (value && typeof value === 'object' && !Array.isArray(value)) {
-          return JSON.stringify({ ...value, result_id: id })
+          delete value.result_id
+          const encoded = JSON.stringify({ ...value, ...metadata })
+          if (contextCost(encoded) <= this.budget) {
+            return encoded
+          }
         }
       } catch {
         // Plain error messages stay readable; large results always carry a cache reference.
       }
-      return preview
     }
-    let end = Math.min(text.length, this.budget * 3)
-    while (contextCost(text.slice(0, end)) > this.budget) {
+    const fragment = preview !== text ? preview : text
+    const serialize = (end: number) =>
+      JSON.stringify({
+        type: 'tool_result_excerpt',
+        ...metadata,
+        total_characters: text.length,
+        text: fragment.slice(0, end),
+        ...(id && preview === text ? { next_offset: end } : {}),
+        truncated: true,
+        ...(id
+          ? {
+              message:
+                'Full result cached; use read_tool_result for omitted evidence. Do not repeat actions.',
+            }
+          : {}),
+      })
+    let end = Math.min(fragment.length, this.budget * 3)
+    while (contextCost(serialize(end)) > this.budget && end > 0) {
       end = Math.floor(end * 0.75)
     }
-    return JSON.stringify({
-      type: 'tool_result_excerpt',
-      result_id: id,
-      total_characters: text.length,
-      text: text.slice(0, end),
-      next_offset: end,
-      truncated: true,
-      message:
-        'The full result is cached for this request. Use read_tool_result for omitted sections; do not repeat the remote action.',
-    })
+    return serialize(end)
   }
   definition(protocol: 'openai' | 'anthropic'): Record<string, unknown> {
     const name = this.name

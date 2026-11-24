@@ -24,6 +24,10 @@ export interface Env {
   MAX_RESEARCH_ROUNDS?: string
   MAX_RESEARCH_TOKENS?: string
   TOOL_CONCURRENCY?: string
+  MAX_TOOL_RESULT_BYTES?: string
+  MAX_TOOL_CACHE_BYTES?: string
+  MAX_TOOL_CACHE_ENTRIES?: string
+  MAX_MCP_RESPONSE_BYTES?: string
   SEARCH_MAX_RESULTS?: string
   SEARCH_DEPTH?: 'basic' | 'advanced'
   PAGE_MAX_CHARACTERS?: string

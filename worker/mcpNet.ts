@@ -58,3 +58,56 @@ export const oauthFetch = (env: Env) => async (input: string | URL, init?: Reque
   // SDK errors may contain a raw response body, including tokens. Expose only a fixed message.
   return response
 }
+
+/** Enforce decoded body bytes before the SDK accumulates JSON/SSE payloads in memory. */
+export const limitMcpResponse = async (response: Response, maxBytes: number): Promise<Response> => {
+  if (!response.body) {
+    return response
+  }
+  const exceeded = () =>
+    new HttpError(
+      502,
+      'MCP response exceeds MAX_MCP_RESPONSE_BYTES. The operation may have executed; verify its outcome before retrying.'
+    )
+  const length = Number(response.headers.get('Content-Length'))
+  if (Number.isFinite(length) && length > maxBytes) {
+    await response.body.cancel().catch(() => {})
+    throw exceeded()
+  }
+  const reader = response.body.getReader()
+  let bytes = 0
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read()
+        if (done) {
+          reader.releaseLock()
+          controller.close()
+          return
+        }
+        bytes += value.byteLength
+        if (bytes > maxBytes) {
+          const error = exceeded()
+          await reader.cancel(error).catch(() => {})
+          reader.releaseLock()
+          controller.error(error)
+        } else {
+          controller.enqueue(value)
+        }
+      } catch (error) {
+        await reader.cancel(error).catch(() => {})
+        reader.releaseLock()
+        controller.error(error)
+      }
+    },
+    async cancel(reason) {
+      await reader.cancel(reason).catch(() => {})
+      reader.releaseLock()
+    },
+  })
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  })
+}

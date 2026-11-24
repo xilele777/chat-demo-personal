@@ -44,6 +44,32 @@ export const agentPolicy = (env: Env) => ({
   concurrency: integer(env.TOOL_CONCURRENCY, 4, 'TOOL_CONCURRENCY', 1, 8),
 })
 
+/** Bounds retained JS strings as UTF-16 bytes, independently of model token estimates. */
+export const toolResultLimits = (env: Env) => ({
+  resultBytes: integer(
+    env.MAX_TOOL_RESULT_BYTES,
+    1_048_576,
+    'MAX_TOOL_RESULT_BYTES',
+    1024,
+    8_388_608
+  ),
+  cacheBytes: integer(
+    env.MAX_TOOL_CACHE_BYTES,
+    8_388_608,
+    'MAX_TOOL_CACHE_BYTES',
+    1024,
+    33_554_432
+  ),
+  entries: integer(env.MAX_TOOL_CACHE_ENTRIES, 128, 'MAX_TOOL_CACHE_ENTRIES', 1, 512),
+  responseBytes: integer(
+    env.MAX_MCP_RESPONSE_BYTES,
+    2_097_152,
+    'MAX_MCP_RESPONSE_BYTES',
+    1024,
+    8_388_608
+  ),
+})
+
 export type ResearchMode = 'quick' | 'research'
 
 /** Web research has its own limits; MCP workflows retain their independent execution budget. */
