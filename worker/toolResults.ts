@@ -81,14 +81,30 @@ export class ToolResults {
     const limit = Number.isSafeInteger(input.limit)
       ? Math.max(1, Math.min(16000, Number(input.limit)))
       : 8000
-    const end = Math.min(value.length, offset + limit)
-    return JSON.stringify({
-      type: 'tool_result_excerpt',
-      result_id: input.result_id,
-      offset,
-      text: value.slice(offset, end),
-      total_characters: value.length,
-      ...(end < value.length ? { next_offset: end } : {}),
-    })
+    const found =
+      typeof input.find === 'string' && input.find
+        ? value.toLowerCase().indexOf(input.find.slice(0, 200).toLowerCase(), offset)
+        : -1
+    const serialize = (end: number) =>
+      JSON.stringify({
+        type: 'tool_result_excerpt',
+        result_id: input.result_id,
+        offset,
+        text: value.slice(offset, end),
+        total_characters: value.length,
+        ...(end < value.length ? { next_offset: end, truncated: true } : {}),
+      })
+    // A character limit alone can still overflow for CJK text or escaped JSON.
+    // Include the envelope, and keep a requested match instead of only its preamble.
+    let end = Math.min(value.length, offset + limit)
+    while (contextCost(serialize(end)) > this.budget && end > offset) {
+      if (found >= 0 && (found >= end || found - offset > (end - offset) / 2)) {
+        offset = found
+        end = Math.min(value.length, offset + limit)
+      } else {
+        end = offset + Math.floor((end - offset) * 0.75)
+      }
+    }
+    return serialize(end)
   }
 }
