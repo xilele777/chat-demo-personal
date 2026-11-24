@@ -159,6 +159,13 @@ export const settleReply = (
   ...reply,
   status,
   error,
+  ...(reply.processingStartedAt !== undefined
+    ? {
+        processingSeconds:
+          (reply.processingSeconds ?? 0) + Math.max(0, (now - reply.processingStartedAt) / 1000),
+        processingStartedAt: undefined,
+      }
+    : {}),
   blocks: reply.blocks.flatMap((block): ReplyBlock[] => {
     if (reply.stopReason === 'refusal' && (block.type === 'thinking' || block.type === 'text')) {
       return []

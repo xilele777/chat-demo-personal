@@ -251,6 +251,7 @@ export const en = {
   unknownError: 'Unknown error',
   replyRefused: "Sorry, that's beyond my current scope. Let's talk about something else.",
   messageThinkDuration: 'Thought for {count} second',
+  messageProcessingDuration: 'Processed in {count} seconds',
   modelTokenBudgets: 'Input budget: {input} tokens · Output per request: {output} tokens',
   modelTokenBudgetsHelp:
     'Input includes conversation, attachments and tools. Output includes model reasoning. Actual context capacity depends on the selected model and API provider.',

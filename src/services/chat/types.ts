@@ -82,6 +82,9 @@ export type AssistantMessage = MessageBranch & {
   model: ChatModel | null
   /** 请求时是否开启深度思考 */
   thinking?: boolean
+  /** 本次请求开始时间与累计处理时长，包含等待、工具调用和回答生成。 */
+  processingStartedAt?: number
+  processingSeconds?: number
   reasoningEffort?: import('../api/types.js').ReasoningEffort
   /** 请求时是否声明 deepseek_web_search；关闭时仍声明 deepseek_read_url */
   search?: boolean

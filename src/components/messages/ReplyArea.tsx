@@ -69,13 +69,20 @@ export const ReplyArea = memo(function ReplyArea({
   const [open, setOpen] = useState(true)
   const titleActive = streaming && !hasResponse
   useTicker(titleActive, 1000)
-  if (view.steps.length === 0 && !(message.thinking && streaming)) {
+  if (
+    view.steps.length === 0 &&
+    !(message.thinking && streaming) &&
+    message.processingSeconds === undefined
+  ) {
     return null
   }
   // 未记录请求开关时，按是否有思考内容显示标题。
-  const thinking = message.thinking || view.steps.some((step) => step.type === 'thinking')
+  const thinking =
+    message.thinking ||
+    view.steps.some((step) => step.type === 'thinking') ||
+    message.processingSeconds !== undefined
   const title = thinking
-    ? getAreaTitle(view, streaming, Date.now(), hasResponse)
+    ? getAreaTitle(view, streaming, Date.now(), hasResponse, message)
     : t('replyProcess')
   const stopped = !streaming && !hasResponse
   return (

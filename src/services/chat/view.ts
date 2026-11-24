@@ -357,9 +357,11 @@ export const buildReplyView = (reply: AssistantMessage, streaming: boolean): Rep
 /** 思考总用时（秒）：各思考块用时之和，至少 1 秒；有块缺少用时时返回 null。 */
 export const getTotalThinkingSeconds = (steps: Step[], now: number) => {
   let total = 0
+  let hasThinking = false
   for (const step of steps) {
     if (step.type === 'thinking') {
       for (const block of step.blocks) {
+        hasThinking = true
         if (block.elapsedSeconds !== undefined) {
           total += block.elapsedSeconds * 1000
           continue
@@ -371,7 +373,7 @@ export const getTotalThinkingSeconds = (steps: Step[], now: number) => {
       }
     }
   }
-  return Math.max(1, Math.round(total / 1000))
+  return hasThinking ? Math.max(1, Math.round(total / 1000)) : null
 }
 
 /** 折叠区标题 */
@@ -379,9 +381,15 @@ export const getAreaTitle = (
   view: ReplyView,
   streaming: boolean,
   now: number,
-  hasResponse = view.answer !== null
+  hasResponse = view.answer !== null,
+  timing?: Pick<AssistantMessage, 'processingStartedAt' | 'processingSeconds'>
 ) => {
-  if (hasResponse) {
+  if (!streaming && timing?.processingSeconds !== undefined) {
+    return translate('messageProcessingDuration', {
+      count: Math.max(1, Math.round(timing.processingSeconds)),
+    })
+  }
+  if (hasResponse && !streaming) {
     const count = getTotalThinkingSeconds(view.steps, now)
     if (count === null) {
       return translate('thinkingSwitch')

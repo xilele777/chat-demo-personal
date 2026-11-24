@@ -1416,6 +1416,12 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
   }
   set((state) => ({ streaming: { ...state.streaming, [sessionId]: controller } }))
   let reply = { ...initial, usage: undefined } as AssistantMessage
+  let processingStart = 0
+  const previousProcessingSeconds = request.prefix?.processingSeconds ?? 0
+  const processingNow = () =>
+    processingStart
+      ? previousProcessingSeconds + Math.max(0, (performance.now() - processingStart) / 1000)
+      : previousProcessingSeconds
   const visibleReply = () => ({ ...reply, usage: addUsage(request.prefix?.usage, reply.usage) })
   let frame = 0
   const flush = () => {
@@ -1448,6 +1454,13 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           latestReminder,
           cloudMode && useCloud.getState().config?.protocol !== 'deepseek'
         )
+        processingStart = performance.now()
+        const requestStartedAt = Date.now()
+        reply = {
+          ...reply,
+          processingStartedAt: requestStartedAt,
+          processingSeconds: previousProcessingSeconds,
+        }
         const events = streamMessage(
           useSettings.getState().apiKey ?? '',
           {
@@ -1490,7 +1503,13 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             updateSession(sessionId, (session) => (session.title ? session : { ...session, title }))
             titleRequests.delete(controller)
           }
-          reply = applyEvent(reply, event, Date.now(), blockIndexes)
+          // Derive stream timestamps from a monotonic clock so wall-clock corrections cannot distort durations.
+          reply = applyEvent(
+            reply,
+            event,
+            requestStartedAt + performance.now() - processingStart,
+            blockIndexes
+          )
           if (event.type === 'message_delta' && event.usage && !event.delta.stop_reason) {
             // A completed tool stage must survive cancellation or closing the page during the next stage.
             flush()
@@ -1550,6 +1569,9 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       }
     }
   } finally {
+    if (processingStart) {
+      reply = { ...reply, processingSeconds: processingNow(), processingStartedAt: undefined }
+    }
     const finalReply = visibleReply()
     titleRequests.delete(controller)
     streamFlushes.delete(sessionId)

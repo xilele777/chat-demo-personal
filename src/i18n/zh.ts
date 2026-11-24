@@ -235,6 +235,7 @@ export const zh = {
   unknownError: '未知错误',
   replyRefused: '你好，这个问题我暂时无法回答，让我们换个话题再聊聊吧。',
   messageThinkDuration: '已思考（用时 {count} 秒）',
+  messageProcessingDuration: '处理用时 {count} 秒',
   modelTokenBudgets: '输入预算 {input} Token · 单次输出上限 {output} Token',
   modelTokenBudgetsHelp:
     '输入预算包含对话、附件和工具；输出上限包含模型思考。实际上下文容量由当前模型和 API 服务决定。',
