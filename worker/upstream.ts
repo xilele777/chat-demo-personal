@@ -145,6 +145,7 @@ async function messages(body: ChatRequest, env: Env) {
     result.push({
       role: 'user',
       content: CONTINUE_PROMPT,
+      continuation: true,
     })
   }
   return { system: [body.system, reminder].filter(Boolean).join('\n\n'), messages: result }
@@ -313,10 +314,15 @@ async function genericProvider(
     body.messages,
     env
   )
+  const providerHistory = history.map((message) => {
+    const providerMessage = { ...message }
+    delete providerMessage.continuation
+    return providerMessage
+  })
   const payload: Record<string, unknown> = responses
     ? {
         model: env.UPSTREAM_MODEL,
-        input: [{ role: 'developer', content: body.system }, ...responsesInput(history)],
+        input: [{ role: 'developer', content: body.system }, ...responsesInput(providerHistory)],
         ...(turnInstructions ? { instructions: turnInstructions } : {}),
         reasoning: { summary: 'detailed', ...(effort ? { effort } : {}) },
         include: ['reasoning.encrypted_content'],
@@ -333,7 +339,7 @@ async function genericProvider(
           model: env.UPSTREAM_MODEL,
           messages: [
             { role: 'system', content: body.system },
-            ...history,
+            ...providerHistory,
             ...(turnInstructions ? [{ role: 'system', content: turnInstructions }] : []),
           ],
           max_completion_tokens: max,
@@ -345,7 +351,7 @@ async function genericProvider(
       : {
           model: env.UPSTREAM_MODEL,
           system: body.system + (turnInstructions ? '\n' + turnInstructions : ''),
-          messages: history,
+          messages: providerHistory,
           max_tokens: max,
           stream: true,
           ...extra,

@@ -15,6 +15,7 @@ import type {
   UserMessage,
 } from './types.js'
 import { mergeUsageSnapshot } from './usage.js'
+import { historicalMcpContext } from './toolHistory.js'
 
 /**
  * 文件按 Files API 的 file_id（附件的 serverId）引用：图片用 image 块，其余用 document 块。
@@ -207,15 +208,15 @@ export const canContinueReply = (reply: AssistantMessage): boolean => {
 }
 
 /**
- * 已结束或停止且有回答文本的回复才放进上下文；被安全拒绝的轮次不回传。
+ * 已结束或停止且有回答文本，或存在需要记住的 MCP 操作记录；拒绝轮次不回传。
  * 服务端模板提示不进入上下文。
  */
 const isUsableReply = (message: Message): message is AssistantMessage =>
   message.role === 'assistant' &&
-  (message.status === 'done' || message.status === 'stopped') &&
   message.stopReason !== 'refusal' &&
   !message.blocks.some((block) => block.type === 'text' && block.isTemplate) &&
-  getReplyText(message) !== ''
+  (((message.status === 'done' || message.status === 'stopped') && getReplyText(message) !== '') ||
+    (['done', 'stopped', 'error'].includes(message.status) && Boolean(message.mcpTools?.length)))
 
 /** 有文件时用内容块数组：先文件后文本，文件按 Files API 的 file_id 引用 */
 const toUserParam = ({ content, files }: UserMessage): MessageParam => {
@@ -237,11 +238,14 @@ const toUserParam = ({ content, files }: UserMessage): MessageParam => {
  * - 阅读链接结果原样回传，保留 signature：服务端解密后将页面拼回该轮提问末尾；
  */
 const toAssistantParam = (
-  { blocks }: AssistantMessage,
+  reply: AssistantMessage,
   prefix = false,
   thinking = false,
   includeSearchSources = false
 ): Extract<MessageParam, { role: 'assistant' }> => {
+  // Preserve tool outcomes when the following model stream failed; partial error
+  // prose must not become a supposedly completed answer in a subsequent request.
+  const blocks = reply.status === 'error' ? [] : reply.blocks
   const content: AssistantBlockParam[] = []
   // 成功阅读的网页靠签名恢复正文；缺少有效签名时，调用与结果都不回传。
   const unsignedReadLinks = new Set(
@@ -338,6 +342,10 @@ const toAssistantParam = (
           ),
       })
     }
+    const activity = historicalMcpContext(reply.mcpTools ?? [])
+    if (activity) {
+      content.push({ type: 'text', text: activity })
+    }
   }
   return {
     role: 'assistant',
@@ -345,7 +353,7 @@ const toAssistantParam = (
   }
 }
 
-/** 历史中会进入请求上下文的轮次：提问后紧跟可用回答的才保留 */
+/** 成对保留回答或 MCP 操作记录，具体协议不支持的空内容在组装请求时省略。 */
 export const getContextRounds = (history: Message[]): [UserMessage, AssistantMessage][] => {
   const rounds: [UserMessage, AssistantMessage][] = []
   for (let i = 0; i + 1 < history.length; i++) {
@@ -384,8 +392,12 @@ export const toRequestMessages = (
     if (!user.content && toFileBlocks(user.files).length === 0) {
       continue
     }
+    const assistant = toAssistantParam(reply, false, false, includeSearchSources)
+    if (!assistant.content.length) {
+      continue
+    }
     appendReminder(reply.latestReminder)
-    messages.push(toUserParam(user), toAssistantParam(reply, false, false, includeSearchSources))
+    messages.push(toUserParam(user), assistant)
   }
   appendReminder(latestReminder)
   messages.push(toUserParam(question))

@@ -1,7 +1,13 @@
 import { HttpError, type Env } from './types.js'
 import { tokenBudgets } from './policy.js'
 
-export type ContextMessage = { role: string; content: unknown; [key: string]: unknown }
+export type ContextMessage = {
+  role: string
+  content: unknown
+  /** Internal round marker, stripped before sending to the provider. */
+  continuation?: boolean
+  [key: string]: unknown
+}
 export const CONTINUE_PROMPT =
   'Continue the previous answer from exactly where it stopped. Do not repeat the existing answer.'
 
@@ -24,14 +30,25 @@ export const contextCost = (content: unknown): number => {
   if (Array.isArray(content)) {
     return content.reduce(
       (sum, block) =>
-        sum +
-        (block.type === 'image' || block.type === 'image_url'
-          ? 4096
-          : contextCost(block.text) +
-            contextCost(block.content) +
-            contextCost(block.input ? JSON.stringify(block.input) : '')),
+        sum + (block?.type === 'image' || block?.type === 'image_url' ? 4096 : contextCost(block)),
       0
     )
+  }
+  if (content && typeof content === 'object') {
+    // Native tool loops also send thinking, signatures, tool identities and nested
+    // results. Count the serialized envelope rather than a text-only allowlist.
+    // Recurse into nested image blocks without counting their base64 as prose.
+    return Object.entries(content).reduce(
+      (sum, [key, value]) =>
+        sum +
+        contextCost(JSON.stringify(key)) +
+        contextCost(typeof value === 'string' ? JSON.stringify(value) : value) +
+        2,
+      2
+    )
+  }
+  if (typeof content === 'number' || typeof content === 'boolean') {
+    return contextCost(String(content))
   }
   return 0
 }
@@ -61,7 +78,7 @@ export const limitContext = <T extends ContextMessage>(
       (message, index) =>
         index > 0 &&
         message.role === 'user' &&
-        message.content !== CONTINUE_PROMPT &&
+        !message.continuation &&
         !(
           Array.isArray(message.content) &&
           message.content.some((block) => block.type === 'tool_result')
