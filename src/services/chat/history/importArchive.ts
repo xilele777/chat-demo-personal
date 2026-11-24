@@ -4,6 +4,7 @@ import type { SessionIndexEntry } from './format.js'
 import { INDEX_PATH, MANIFEST_PATH, USER_PATH, parseSessionPath, sessionFilesDir } from './paths.js'
 import { checkManifest, readSessionFile, readSessionIndex } from './schema.js'
 import { toLocalSession } from './toLocal.js'
+import { importSnapshot, SNAPSHOT_FORMAT } from './snapshot.js'
 import {
   ArchiveError,
   isZipFile,
@@ -109,7 +110,13 @@ export const importArchive = async (file: File): Promise<void> => {
         if (path !== MANIFEST_PATH) {
           fail('backupUnrecognized')
         }
-        checkManifest(await readJson(entry))
+        const value = await readJson(entry)
+        checkManifest(value)
+        if ((value as { format?: string }).format === SNAPSHOT_FORMAT) {
+          // The manifest is fully consumed; the native reader revalidates the archive.
+          await importSnapshot(file, db)
+          return
+        }
         manifest = true
       } else if (path === USER_PATH && !index && imported.size === 0) {
         // 账号信息（已脱敏）不导入；文件可能缺失。

@@ -1,4 +1,5 @@
 import { BackupError, fail } from './errors.js'
+import { checkSnapshotManifest, SNAPSHOT_FORMAT } from './snapshot.js'
 import {
   EXPORT_FORMAT_VERSION,
   type ChatMessage,
@@ -228,6 +229,10 @@ const sessionId: Read<string> = (value) => {
 
 /** 版本号用于校验归档格式兼容性；字段结构由各字段的校验函数保证。 */
 export const checkManifest = (value: unknown): void => {
+  if (record(value).format === SNAPSHOT_FORMAT) {
+    checkSnapshotManifest(value)
+    return
+  }
   const version = record(value).export_format_version
   if (typeof version === 'number' && version > EXPORT_FORMAT_VERSION) {
     fail('backupNewerVersion')

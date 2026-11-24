@@ -245,7 +245,7 @@ export const zh = {
   groupTitleToolOpen: '正在浏览网页',
   messageThinking: '正在思考',
   backupInvalidJson: '文件不是有效的 JSON',
-  backupUnrecognized: '无法识别该文件，请选择 DeepSeek 导出的历史对话 ZIP 文件',
+  backupUnrecognized: '无法识别该文件，请选择本应用或 DeepSeek 导出的历史对话 ZIP 文件',
   backupNewerVersion: '文件版本过新，请升级后再导入',
   backupInvalidVersion: '文件版本无效，无法导入',
   backupIncomplete: '文件内容不完整，无法导入',
@@ -276,7 +276,8 @@ export const zh = {
   historyImportConfirm: '确认导入',
   historyImportConfirmTitle: '确认导入历史对话？',
   historyImportConfirmDescription: '上传的历史对话会覆盖当前所有对话记录，是否确认导入？',
-  historyImportDescription: '导入历史对话会覆盖全部本地对话和附件，支持 DeepSeek 导出的 ZIP 文件。',
+  historyImportDescription:
+    '导入会替换全部本地对话和附件，支持本应用的备份 ZIP 和 DeepSeek 历史 ZIP。',
   historyImportedOne: '已导入 1 个对话',
   historyImported: '已导入 {count} 个对话',
   historyImportFailed:
@@ -284,7 +285,7 @@ export const zh = {
   historyExportFailed: '导出失败：{message}',
   exportAllLabel: '导出所有历史对话',
   historyExportDescription:
-    '包含所有历史对话及本地图片原件；其他附件仅保留文件信息，不包含 API Key。',
+    '包含全部对话分支、来源、工具记录、用量及可用附件原件；不包含 API Key 和设置。',
   exportAllDownload: '下载',
   deleteAllSessions: '删除所有对话',
   deleteAllSessionsModalTitle: '删除后，所有对话都将被清空且无法找回',

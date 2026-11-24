@@ -14,7 +14,7 @@ const enqueueBackup = <T>(run: () => Promise<T>): Promise<T> => {
   return task
 }
 
-const backupFileName = (date: Date) => `deepseek_data-${formatDate(date)}.zip`
+const backupFileName = (date: Date) => `personal-chat-${formatDate(date)}.zip`
 
 /** 导出为历史会话导出格式的 ZIP，可再次导入。 */
 export const exportHistory = (): Promise<{ name: string; blob: Blob }> =>
@@ -33,15 +33,15 @@ export const exportHistory = (): Promise<{ name: string; blob: Blob }> =>
         yield { ...session, ...summary }
       }
     }
-    const { exportArchive } = await import('./history/exportArchive.js')
+    const { exportSnapshot } = await import('./history/snapshot.js')
     const now = new Date()
-    const blob = await exportArchive(readSessions())
+    const blob = await exportSnapshot(readSessions(), db.loadFile)
     return { name: backupFileName(now), blob }
   })
 
 /**
  * 确认覆盖后调用：先检查 ZIP 格式与版本，校验失败时保留正在生成的回答；
- * 通过后从 ZIP 流式写入暂存，成功才替换原有会话与图片原件。返回导入的会话数。
+ * 通过后从 ZIP 流式写入暂存，成功才替换原有会话与附件原件。返回导入的会话数。
  */
 export const importHistory = (file: File): Promise<number> =>
   enqueueBackup(async () => {
