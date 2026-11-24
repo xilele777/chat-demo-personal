@@ -1,12 +1,13 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { toSessionSummary, type Session, type SessionSummary } from './types.js'
 import { searchSession, type HistorySearchResult } from './search.js'
+import { outboxKey, type PendingCloudSession } from './outbox.js'
 
 /** IndexedDB 存储结构版本；新增或调整存储、索引时递增。 */
 const DB_VERSION = 13
 const CLOUD_CACHE_LIMIT = 30
 
-export type PendingCloudSession = { id: string; session: Session; version?: string }
+export type { PendingCloudSession } from './outbox.js'
 
 /** 文件原件按附件的本地 id 存储，所有引用同一 id 的消息共用一份；用于缩略图、打开查看，以及没有 serverId 时补传。 */
 export type StoredFile = {
@@ -154,22 +155,49 @@ export const removeCachedCloudSession = async (id: string): Promise<void> => {
 
 export const loadOutbox = async (): Promise<PendingCloudSession[]> =>
   (await getDB()).getAll('cloudOutbox')
-export const putOutbox = async (session: Session, version: string): Promise<void> => {
-  await (await getDB()).put('cloudOutbox', { id: session.id, session, version })
-}
-export const removeOutbox = async (id: string, version?: string): Promise<void> => {
-  const tx = (await getDB()).transaction('cloudOutbox', 'readwrite')
+export const putOutbox = async (
+  session: Session,
+  version: string,
+  files: StoredFile[] = [],
+  writer?: string
+): Promise<void> => {
+  // Recovery must never observe a new snapshot without its newly added originals.
+  const tx = (await getDB()).transaction(['cloudOutbox', 'files'], 'readwrite')
   await Promise.all([
     (async () => {
-      const current = await tx.store.get(id)
-      // A save finishing in this tab must not delete newer unsynced work from another tab.
-      if (version === undefined || current?.version === version) {
-        await tx.store.delete(id)
+      try {
+        for (const file of files) {
+          await tx.objectStore('files').put(file)
+        }
+        await tx
+          .objectStore('cloudOutbox')
+          .put({ id: outboxKey(session.id, writer), session, version, writer })
+      } catch (error) {
+        abortTransaction(tx)
+        throw error
       }
     })(),
     tx.done,
   ])
 }
+const deleteOutbox = async (key: string, expected?: { version?: string }): Promise<void> => {
+  const tx = (await getDB()).transaction('cloudOutbox', 'readwrite')
+  await Promise.all([
+    (async () => {
+      const current = await tx.store.get(key)
+      // A save finishing in this tab must not delete newer unsynced work from another tab.
+      if (expected === undefined || current?.version === expected.version) {
+        await tx.store.delete(key)
+      }
+    })(),
+    tx.done,
+  ])
+}
+export const removeOutbox = (id: string, version?: string, writer?: string): Promise<void> =>
+  deleteOutbox(outboxKey(id, writer), version === undefined ? undefined : { version })
+/** Even an old unversioned snapshot must not remove a newly versioned replacement. */
+export const removeOutboxSnapshot = (key: string, version?: string): Promise<void> =>
+  deleteOutbox(key, { version })
 export const loadStagingSessions = async (): Promise<Session[]> =>
   (await getDB()).getAll('sessionsStaging')
 export const loadStagingFiles = async (): Promise<StoredFile[]> =>

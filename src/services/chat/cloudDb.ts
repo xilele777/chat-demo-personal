@@ -1,6 +1,8 @@
 import { cloudFetch, cloudJson } from '../cloud.js'
 import { toSessionSummary, type Session, type SessionSummary } from './types.js'
 import * as local from './localDb.js'
+import { recoverOutbox } from './outbox.js'
+import { translate } from '../../i18n/index.js'
 
 type Index = {
   generation: string
@@ -13,6 +15,8 @@ let queue: Promise<unknown> = Promise.resolve()
 const lineage = new Map<string, string>()
 const confirmedFiles = new Set<string>()
 const pending = new Map<string, Session>()
+const writer = crypto.randomUUID()
+const recoveredSources = new Map<string, local.PendingCloudSession>()
 let recovered = false
 
 const serial = <T>(run: () => Promise<T>): Promise<T> => {
@@ -46,8 +50,14 @@ export const readIndex = async (): Promise<Index> => {
 export const loadSessionSummaries = async (): Promise<SessionSummary[]> => {
   const index = await readIndex()
   if (!recovered) {
-    for (const item of await local.loadOutbox()) {
-      pending.set(item.id, item.session)
+    for (const item of await recoverOutbox(
+      await local.loadOutbox(),
+      index.generation,
+      new Set(index.sessions.map((session) => session.id)),
+      translate('cloudLocalCopy')
+    )) {
+      pending.set(item.session.id, item.session)
+      recoveredSources.set(item.session.id, item.source)
     }
     recovered = true
   }
@@ -109,7 +119,7 @@ export const saveSession = (session: Session, files: local.StoredFile[] = []): P
   // Save the latest local snapshot immediately, even while an earlier network save is queued.
   pending.set(session.id, session)
   const version = crypto.randomUUID()
-  const durable = Promise.all([local.putOutbox(session, version), local.saveFiles(files)])
+  const durable = local.putOutbox(session, version, files, writer)
   // The serial network task observes this failure; mark it handled while it waits in the queue.
   void durable.catch(() => {})
   return serial(async () => {
@@ -156,9 +166,10 @@ export const saveSession = (session: Session, files: local.StoredFile[] = []): P
     ).json()) as { revision: string }
     lineage.set(key, result.revision)
     cacheSession({ ...data, cloud: { revision: result.revision, generation: source.generation } })
+    await forgetRecoveredSource(session.id)
     if (pending.get(session.id) === session) {
       pending.delete(session.id)
-      await local.removeOutbox(session.id, version)
+      await local.removeOutbox(session.id, version, writer)
     }
   })
 }
@@ -184,7 +195,8 @@ export const deleteSession = (id: string): Promise<void> =>
       cloudJson('DELETE', { revision, generation: source.generation })
     )
     pending.delete(id)
-    await local.removeOutbox(id)
+    await local.removeOutbox(id, undefined, writer)
+    await forgetRecoveredSource(id)
     indexedSessions.delete(id)
     void local.removeCachedCloudSession(id).catch(local.reportStorageError('remove cloud cache'))
   })
@@ -226,9 +238,10 @@ export const commitStaging = (): Promise<SessionSummary[]> =>
     indexedSessions.clear()
     lineage.clear()
     for (const id of pending.keys()) {
-      await local.removeOutbox(id)
+      await local.removeOutbox(id, undefined, writer)
     }
     pending.clear()
+    recoveredSources.clear()
     await local.clearStaging()
     return sessions.map(toSessionSummary)
   })
@@ -236,6 +249,17 @@ export const commitStaging = (): Promise<SessionSummary[]> =>
 export const forgetPending = async (ids: string[]): Promise<void> => {
   for (const id of ids) {
     pending.delete(id)
-    await local.removeOutbox(id)
+    await local.removeOutbox(id, undefined, writer)
+    await forgetRecoveredSource(id)
+  }
+}
+
+const forgetRecoveredSource = async (id: string): Promise<void> => {
+  const source = recoveredSources.get(id)
+  if (source) {
+    await local.removeOutboxSnapshot(source.id, source.version)
+    if (recoveredSources.get(id) === source) {
+      recoveredSources.delete(id)
+    }
   }
 }

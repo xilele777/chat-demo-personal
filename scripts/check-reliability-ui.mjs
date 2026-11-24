@@ -135,13 +135,17 @@ try {
     })
     const tx = db.transaction('cloudOutbox', 'readwrite')
     const store = tx.objectStore('cloudOutbox')
-    const request = store.get(id)
-    request.onsuccess = () =>
+    const request = store.getAll()
+    request.onsuccess = () => {
+      const current = request.result.find((item) => item.session.id === id)
       store.put({
-        ...request.result,
+        ...current,
+        id: JSON.stringify([id, 'simulated-other-writer']),
+        writer: 'simulated-other-writer',
         version: 'newer-other-tab',
-        session: { ...request.result.session, title: '另一标签页尚未保存的修改' },
+        session: { ...current.session, title: '另一标签页尚未保存的修改' },
       })
+    }
     await new Promise((resolve, reject) => {
       tx.oncomplete = resolve
       tx.onerror = () => reject(tx.error)
@@ -169,8 +173,13 @@ try {
           request.onsuccess = () => resolve(request.result)
         })
         const value = await new Promise((resolve) => {
-          const request = db.transaction('cloudOutbox').objectStore('cloudOutbox').get(id)
-          request.onsuccess = () => resolve(request.result)
+          const request = db.transaction('cloudOutbox').objectStore('cloudOutbox').getAll()
+          request.onsuccess = () =>
+            resolve(
+              request.result.find(
+                (item) => item.writer === 'simulated-other-writer' && item.session.id === id
+              )
+            )
         })
         db.close()
         return value?.version
