@@ -7,7 +7,9 @@ export const validateMcpUrl = (value: string, env: Env): URL => {
   } catch {
     throw new HttpError(400, 'Invalid MCP URL')
   }
-  const host = url.hostname.toLowerCase()
+  // A trailing DNS dot denotes the same host; normalize before checking the boundary.
+  const host = url.hostname.toLowerCase().replace(/\.+$/, '')
+  url.hostname = host
   const localTest = env.DEV_AUTH === 'true' && ['127.0.0.1', 'localhost'].includes(host)
   const ip = host.split('.').map(Number)
   const privateHost =
@@ -25,6 +27,7 @@ export const validateMcpUrl = (value: string, env: Env): URL => {
         (ip[0] === 169 && ip[1] === 254) ||
         (ip[0] === 172 && ip[1] >= 16 && ip[1] <= 31) ||
         (ip[0] === 192 && ip[1] === 168) ||
+        (ip[0] === 198 && (ip[1] === 18 || ip[1] === 19)) ||
         (ip[0] === 100 && ip[1] >= 64 && ip[1] <= 127)))
   if (
     url.username ||
