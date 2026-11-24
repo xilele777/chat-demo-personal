@@ -1,4 +1,4 @@
-import { validSessionStructure } from './sessionValidation.js'
+import { validSessionStructure } from '../src/services/chat/validation.js'
 
 export type Protocol = 'deepseek' | 'anthropic' | 'openai'
 

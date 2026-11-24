@@ -1,4 +1,4 @@
-import { readMessageEvent } from '../src/services/api/parseEvent.js'
+import { readMessageEvent } from '../api/parseEvent.js'
 
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -60,6 +60,16 @@ export const validSessionStructure = (session: Record<string, unknown>): boolean
         !optionalBoolean(message.prefix) ||
         !optionalBoolean(message.thinking) ||
         !optionalBoolean(message.search) ||
+        !optionalString(message.reasoningEffort) ||
+        !optionalString(message.stopReason) ||
+        (message.reasoningEffort !== undefined &&
+          !['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(
+            String(message.reasoningEffort)
+          )) ||
+        (message.stopReason !== undefined &&
+          !['end_turn', 'max_tokens', 'tool_use', 'refusal'].includes(
+            String(message.stopReason)
+          )) ||
         !optionalString(message.latestReminder) ||
         !optionalNumber(message.processingSeconds) ||
         !optionalNumber(message.processingStartedAt)
@@ -73,6 +83,24 @@ export const validSessionStructure = (session: Record<string, unknown>): boolean
           !readMessageEvent({ type: 'content_block_start', index: 0, content_block: block })
         ) {
           return false
+        }
+        if (!optionalBoolean(block.isTemplate) || !optionalString(block.signature)) {
+          return false
+        }
+        if (block.type === 'web_search_tool_result') {
+          const parsed = readMessageEvent({
+            type: 'content_block_start',
+            index: 0,
+            content_block: block,
+          })
+          if (
+            parsed?.type !== 'content_block_start' ||
+            parsed.content_block.type !== 'web_search_tool_result' ||
+            !Array.isArray(block.content) ||
+            parsed.content_block.content.length !== block.content.length
+          ) {
+            return false
+          }
         }
         if (
           block.type === 'text' &&
@@ -113,7 +141,8 @@ export const validSessionStructure = (session: Record<string, unknown>): boolean
             'cache_read_input_tokens',
             'cache_creation_input_tokens',
             'reasoning_tokens',
-          ].every((key) => optionalNumber((message.usage as Record<string, unknown>)[key])))
+          ].every((key) => optionalNumber((message.usage as Record<string, unknown>)[key])) ||
+          !optionalBoolean((message.usage as Record<string, unknown>).cache_reported))
       ) {
         return false
       }
@@ -121,7 +150,19 @@ export const validSessionStructure = (session: Record<string, unknown>): boolean
         message.error !== undefined &&
         (!record(message.error) ||
           typeof message.error.kind !== 'string' ||
-          typeof message.error.message !== 'string')
+          typeof message.error.message !== 'string' ||
+          !optionalNumber(message.error.status) ||
+          !optionalBoolean(message.error.retryable) ||
+          (message.error.localMessage !== undefined &&
+            (!record(message.error.localMessage) ||
+              typeof message.error.localMessage.key !== 'string' ||
+              (message.error.localMessage.params !== undefined &&
+                (!record(message.error.localMessage.params) ||
+                  !Object.values(message.error.localMessage.params).every(
+                    (value) =>
+                      typeof value === 'string' ||
+                      (typeof value === 'number' && Number.isFinite(value))
+                  ))))))
       ) {
         return false
       }

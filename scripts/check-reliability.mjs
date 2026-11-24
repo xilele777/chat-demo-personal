@@ -48,6 +48,28 @@ for (const mutate of [
     s.messages[1].blocks = [{ type: 'text', text: 42 }]
   },
   (s) => {
+    s.messages[1].blocks = [{ type: 'thinking', thinking: 'thought', signature: 42 }]
+  },
+  (s) => {
+    s.messages[1].blocks = [{ type: 'text', text: 'answer', isTemplate: 'false' }]
+  },
+  (s) => {
+    s.messages[1].usage = { input_tokens: 1, cache_reported: 'false' }
+  },
+  (s) => {
+    s.messages[1].reasoningEffort = ['high']
+  },
+  (s) => {
+    s.messages[1].stopReason = ['refusal']
+  },
+  (s) => {
+    s.messages[1].error = {
+      kind: 'upload',
+      message: 'error',
+      localMessage: { key: 'message', params: [] },
+    }
+  },
+  (s) => {
     s.messages[1].status = 'unknown'
   },
   (s) => {
