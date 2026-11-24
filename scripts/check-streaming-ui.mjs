@@ -2,7 +2,10 @@ import { chromium, expect } from '@playwright/test'
 const origin = process.env.UI_ORIGIN ?? 'http://127.0.0.1:18889'
 if (!['localhost', '127.0.0.1'].includes(new URL(origin).hostname))
   throw new Error('Use the isolated local mock server')
-const browser = await chromium.launch({ channel: 'msedge', headless: true })
+const browser = await chromium.launch({
+  channel: process.env.PLAYWRIGHT_CHANNEL ?? (process.platform === 'win32' ? 'msedge' : undefined),
+  headless: true,
+})
 const context = await browser.newContext({
   viewport: { width: 1366, height: 844 },
   locale: 'zh-CN',

@@ -10,7 +10,10 @@ if (!['127.0.0.1', 'localhost'].includes(new URL(origin).hostname)) {
   throw new Error('UI checks must run against the temporary local mock server')
 }
 const output = await mkdtemp(path.join(tmpdir(), 'personal-chat-ui-'))
-const browser = await chromium.launch({ channel: 'msedge', headless: true })
+const browser = await chromium.launch({
+  channel: process.env.PLAYWRIGHT_CHANNEL ?? (process.platform === 'win32' ? 'msedge' : undefined),
+  headless: true,
+})
 const context = await browser.newContext({
   viewport: { width: 1366, height: 900 },
   locale: 'zh-CN',

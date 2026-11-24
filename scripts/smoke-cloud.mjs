@@ -862,6 +862,12 @@ try {
     await new Promise((resolve) => {
       process.once('SIGINT', resolve)
       process.once('SIGTERM', resolve)
+      process.on('message', (message) => {
+        if (message?.type === 'shutdown') {
+          process.disconnect?.()
+          resolve()
+        }
+      })
     })
   }
 } catch (error) {

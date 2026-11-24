@@ -8,7 +8,10 @@ const origin = process.env.UI_ORIGIN ?? 'http://127.0.0.1:8788'
 if (!['127.0.0.1', 'localhost'].includes(new URL(origin).hostname))
   throw new Error('Use the isolated local mock server')
 const output = await mkdtemp(path.join(tmpdir(), 'personal-chat-interactions-'))
-const browser = await chromium.launch({ channel: 'msedge', headless: true })
+const browser = await chromium.launch({
+  channel: process.env.PLAYWRIGHT_CHANNEL ?? (process.platform === 'win32' ? 'msedge' : undefined),
+  headless: true,
+})
 const context = await browser.newContext({
   viewport: { width: 1366, height: 900 },
   locale: 'zh-CN',

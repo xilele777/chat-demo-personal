@@ -14,6 +14,9 @@
     "db:local": "wrangler d1 migrations apply personal-chat --local",
     "db:remote": "wrangler d1 migrations apply personal-chat --remote",
     "type:worker": "tsc -p tsconfig.worker.json",
+    "test": "pnpm test:context && pnpm test:agent && pnpm test:research && pnpm test:mcp-context && pnpm test:responses && pnpm test:product && pnpm test:anthropic && pnpm test:reliability",
+    "test:reliability": "node --import tsx scripts/check-reliability.mjs",
+    "test:reliability-ui": "node scripts/check-reliability-ui.mjs",
     "test:context": "node --import tsx scripts/check-context.mjs",
     "test:agent": "node --import tsx scripts/check-agent.mjs",
     "test:research": "node --import tsx scripts/check-research.mjs",
@@ -25,9 +28,13 @@
     "test:interactions": "node scripts/check-interactions.mjs",
     "test:anthropic": "node --import tsx scripts/check-anthropic.mjs",
     "test:cloud": "node --import tsx scripts/smoke-cloud.mjs",
+    "test:cloud-ui": "node scripts/check-cloud-ui.mjs",
     "type": "tsc -p tsconfig.json",
     "lint": "oxlint src worker rspack.config.ts",
     "format": "oxfmt --write ."
+  },
+  "engines": {
+    "node": ">=22.12.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

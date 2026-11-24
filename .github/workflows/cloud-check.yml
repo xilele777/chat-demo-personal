@@ -26,7 +26,9 @@ jobs:
       - run: pnpm type
       - run: pnpm type:worker
       - run: pnpm lint
+      - run: pnpm test
       - run: pnpm build:cloud
-      - run: pnpm test:cloud
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:cloud-ui
         env:
           WRANGLER_SEND_METRICS: 'false'
