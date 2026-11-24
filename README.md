@@ -117,12 +117,13 @@ Token 用量以接口实际返回为准，缓存输入计入输入总数，思�
 | `pnpm type` / `pnpm type:worker`  | 前端 / Worker 类型检查                                        |
 | `pnpm lint`                       | 代码检查                                                      |
 | `pnpm test:context`               | 检查上下文预算与历史来源保留                                  |
+| `pnpm test:research`              | 检查搜索停止条件、去重、证据预算和固定提示复用                |
 | `pnpm test:product`               | 检查草稿恢复、分支搜索和 Token 统计                           |
 | `pnpm test:anthropic`             | 检查 Anthropic 原生思考、MCP 调用与确认流程                   |
 | `pnpm test:ui`                    | 使用已安装的 Edge 验收桌面和手机界面，需先运行模拟服务        |
 | `pnpm test:interactions`          | 验收欢迎页、Logo 导航、多选、批量操作和侧栏，需先运行模拟服务 |
 | `pnpm test:cloud`                 | 使用本地 D1/R2 和模拟 API 执行集成测试，需先构建云端版本      |
-| `pnpm deploy:cloud`               | 构建、应用远程数据库迁移并部署到 Cloudflare                    |
+| `pnpm deploy:cloud`               | 构建、应用远程数据库迁移并部署到 Cloudflare                   |
 
 前端使用 React + TypeScript，云端使用 Cloudflare Workers、D1 和 R2。`src/` 包含页面、会话和附件逻辑，`worker/` 包含认证、同步、模型适配和搜索，`migrations/` 包含数据库迁移。
 
