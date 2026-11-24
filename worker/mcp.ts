@@ -399,7 +399,7 @@ export async function* runMcpTool(
   input: Record<string, unknown>,
   env: Env,
   signal: AbortSignal
-): AsyncGenerator<Record<string, unknown>, { text: string; isError: boolean }> {
+): AsyncGenerator<Record<string, unknown>, { text: string; isError: boolean; denied?: boolean }> {
   const block: McpToolBlock = {
     type: 'mcp_tool',
     id: crypto.randomUUID(),
@@ -438,10 +438,11 @@ export async function* runMcpTool(
         const text =
           'The user declined this tool call, or its approval expired. Do not repeat it without a new user request.'
         yield { type: 'mcp_tool_status', block: { ...block, status: 'denied', output: text } }
-        return { text, isError: true }
+        return { text, isError: true, denied: true }
       }
     }
     yield { type: 'mcp_tool_status', block }
+    signal.throwIfAborted()
     const result = await entry.client.callTool(
       { name: entry.tool.name, arguments: input },
       undefined,

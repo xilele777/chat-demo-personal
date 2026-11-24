@@ -750,7 +750,14 @@ export async function* anthropicReply(body: ChatRequest, env: Env, signal: Abort
           const block = blocks.get(event.index)
           if (block) {
             if (event.delta.type === 'input_json_delta') {
-              inputs.set(event.index, (inputs.get(event.index) ?? '') + event.delta.partial_json)
+              if (typeof event.delta.partial_json !== 'string') {
+                throw new HttpError(502, 'Invalid tool argument delta')
+              }
+              const input = (inputs.get(event.index) ?? '') + event.delta.partial_json
+              if (input.length > 16000) {
+                throw new HttpError(502, 'Tool arguments exceed the allowed size')
+              }
+              inputs.set(event.index, input)
             } else if (event.delta.type === 'text_delta') {
               block.text = (block.text ?? '') + event.delta.text
             } else if (event.delta.type === 'thinking_delta') {

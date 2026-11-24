@@ -18,6 +18,7 @@ export class ToolRuntime {
   private calls = 0
   private readonly webResults = new Set<string>()
   private readonly webReads = new Set<string>()
+  private readonly declined = new Set<string>()
   constructor(
     private readonly tools: ConnectedMcpTool[],
     private readonly env: Env,
@@ -133,7 +134,21 @@ export class ToolRuntime {
         isError: true,
       }
     }
+    const action = JSON.stringify([
+      entry.server.id ?? entry.server.name,
+      entry.tool.name,
+      canonicalInput(call.input),
+    ])
+    if (this.declined.has(action)) {
+      return {
+        text: 'The user already declined this action in this request. Do not ask again or execute it.',
+        isError: true,
+      }
+    }
     const result = yield* runMcpTool(entry, call.input, this.env, signal)
+    if (result.denied) {
+      this.declined.add(action)
+    }
     return { ...result, text: this.cache.remember(result.text) }
   }
   async *batch(
@@ -172,3 +187,15 @@ export class ToolRuntime {
     return results
   }
 }
+
+/** Object key order must not let an equivalent action bypass a prior denial. */
+const canonicalInput = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(canonicalInput)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(
+          Object.entries(value)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, item]) => [key, canonicalInput(item)])
+        )
+      : value
