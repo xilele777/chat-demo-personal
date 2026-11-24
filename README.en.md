@@ -90,7 +90,11 @@ History export in Settings includes conversations and available original images,
 
 Deleting cloud conversations does not immediately remove R2 attachments or files already uploaded to the model provider. Automatic attachment cleanup is not implemented.
 
+The ZIP is a migration archive, and does not fully round-trip MCP activity, model configuration, processing durations, or token breakdowns. See the [internal review (Chinese)](REVIEW.zh-CN.md) for the findings, fixes, and remaining priorities.
+
 ## Development
+
+`pnpm test` runs the context, agent, research, protocol, and reliability regressions. After `pnpm build:cloud`, run `pnpm test:cloud-ui` to start isolated local D1/R2 and mock APIs and run all desktop, mobile, and concurrency checks. CI uses the same workflow. Browser checks default to Edge on Windows and Chromium on Linux/CI; install Chromium with `pnpm exec playwright install --with-deps chromium` first.
 
 | Command                           | Purpose                                                                       |
 | --------------------------------- | ----------------------------------------------------------------------------- |
