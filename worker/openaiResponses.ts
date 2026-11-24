@@ -103,7 +103,9 @@ export async function* readOpenAIEvents(stream: ReadableStream<Uint8Array>, sign
         const output = value.response?.output ?? [...items.values()]
         const finish =
           value.type === 'response.incomplete'
-            ? 'length'
+            ? value.response?.incomplete_details?.reason === 'content_filter'
+              ? 'content_filter'
+              : 'length'
             : output.some((item) => item.type === 'function_call')
               ? 'tool_calls'
               : 'stop'
