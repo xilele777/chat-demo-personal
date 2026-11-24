@@ -72,7 +72,8 @@ export const en = {
   mcpOAuthToast: 'MCP authenticated successfully',
   mcpOAuthDismiss: 'Got it',
   mcpTestToast: 'MCP connection test succeeded',
-  mcpOAuthSuccessHelp: 'Tools synced. Enable the connection to let AI use your selected tools when needed.',
+  mcpOAuthSuccessHelp:
+    'Tools synced. Enable the connection to let AI use your selected tools when needed.',
   mcpOAuthFailed:
     'OAuth authorization was not completed or has expired. Open the connection editor and sign in again.',
   mcpOAuthHelp:
@@ -250,6 +251,9 @@ export const en = {
   unknownError: 'Unknown error',
   replyRefused: "Sorry, that's beyond my current scope. Let's talk about something else.",
   messageThinkDuration: 'Thought for {count} second',
+  modelTokenBudgets: 'Input budget: {input} tokens · Output per request: {output} tokens',
+  modelTokenBudgetsHelp:
+    'Input includes conversation, attachments and tools. Output includes model reasoning. Actual context capacity depends on the selected model and API provider.',
   messageThinkDurationPlural: 'Thought for {count} seconds',
   messageThinkStopped: 'Stopped',
   deepSearchSearching: 'Searching the web',
@@ -317,7 +321,8 @@ export const en = {
   deactivatedSearchTooltip: 'Search the web when necessary',
   search: 'Search',
   uploadFile: 'Upload files',
-  uploadGenericTooltip: 'Supports images and text/code files (text up to 2 MiB). PDF and Office documents are not supported yet.',
+  uploadGenericTooltip:
+    'Supports images and text/code files (text up to 2 MiB). PDF and Office documents are not supported yet.',
   chatInputStopButtonTooltip: 'Stop',
   uploadMaxMBSize: 'File exceeds the size limit ({size} MB). Please adjust and try again.',
   uploadMaxFiles: 'You can upload up to {count} files',

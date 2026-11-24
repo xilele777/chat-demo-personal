@@ -235,6 +235,9 @@ export const zh = {
   unknownError: '未知错误',
   replyRefused: '你好，这个问题我暂时无法回答，让我们换个话题再聊聊吧。',
   messageThinkDuration: '已思考（用时 {count} 秒）',
+  modelTokenBudgets: '输入预算 {input} Token · 单次输出上限 {output} Token',
+  modelTokenBudgetsHelp:
+    '输入预算包含对话、附件和工具；输出上限包含模型思考。实际上下文容量由当前模型和 API 服务决定。',
   messageThinkDurationPlural: '已思考（用时 {count} 秒）',
   messageThinkStopped: '已停止',
   deepSearchSearching: '正在搜索',
@@ -299,7 +302,8 @@ export const zh = {
   deactivatedSearchTooltip: '按需搜索网页',
   search: '智能搜索',
   uploadFile: '上传文件',
-  uploadGenericTooltip: '目前支持上传图片和文本/代码文件（文本最大 2 MiB），暂不支持 PDF 和 Office 文档',
+  uploadGenericTooltip:
+    '目前支持上传图片和文本/代码文件（文本最大 2 MiB），暂不支持 PDF 和 Office 文档',
   chatInputStopButtonTooltip: '停止生成',
   uploadMaxMBSize: '单个文件大小超过限制（{size}MB），请调整后重试',
   uploadMaxFiles: '上传文件最多支持 {count} 个',

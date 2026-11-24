@@ -1,6 +1,7 @@
 import type { ReasoningEffort } from '../src/services/api/types.js'
 import type { Env } from './types.js'
 import { searchAvailable } from './search.js'
+import { tokenBudgets, agentPolicy } from './policy.js'
 
 export const reasoningEfforts = (env: Env): Exclude<ReasoningEffort, 'auto'>[] => {
   if (env.UPSTREAM_PROTOCOL !== 'openai') {
@@ -24,4 +25,6 @@ export const publicConfig = (env: Env) => ({
   reasoningEfforts: reasoningEfforts(env),
   reasoningEffortsAutomatic: env.OPENAI_REASONING_EFFORTS === undefined,
   mcp: env.UPSTREAM_PROTOCOL === 'openai' || env.UPSTREAM_PROTOCOL === 'anthropic',
+  tokenBudgets: tokenBudgets(env),
+  agentPolicy: agentPolicy(env),
 })

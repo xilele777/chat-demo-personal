@@ -37,6 +37,17 @@ export const ModelSettings = () => {
           disabled={!options.length}
         />
       </div>
+      {config?.tokenBudgets ? (
+        <div className={styles.description}>
+          <p>
+            {t('modelTokenBudgets', {
+              input: config.tokenBudgets.input.toLocaleString(),
+              output: config.tokenBudgets.output.toLocaleString(),
+            })}
+          </p>
+          <p>{t('modelTokenBudgetsHelp')}</p>
+        </div>
+      ) : null}
       <Button variant="outlined" size="m" disabled={loading} onClick={() => void loadModels()}>
         {t(loading ? 'modelsLoading' : 'modelsRefresh')}
       </Button>

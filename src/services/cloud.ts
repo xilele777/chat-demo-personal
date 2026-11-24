@@ -13,6 +13,7 @@ export type CloudConfig = {
   reasoningEfforts: Exclude<ReasoningEffort, 'auto'>[]
   reasoningEffortsAutomatic?: boolean
   mcp?: boolean
+  tokenBudgets?: { input: number; output: number }
 }
 
 export const useCloud = create<{

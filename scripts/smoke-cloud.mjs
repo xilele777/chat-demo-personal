@@ -648,7 +648,7 @@ try {
   })
   await highReasoning.text()
   assert.equal(sentToProvider.reasoning_effort, 'high')
-  assert.equal(sentToProvider.max_completion_tokens, 8192)
+  assert.equal(sentToProvider.max_completion_tokens, 32768)
   assert.equal(sentToProvider.max_tokens, undefined)
   await (
     await call('/anthropic/v1/messages', 'POST', {
@@ -664,7 +664,7 @@ try {
       reasoning_effort: 'high',
     })
   ).text()
-  assert.equal(sentToProvider.max_tokens, 8192)
+  assert.equal(sentToProvider.max_tokens, 32768)
   assert.equal(sentToProvider.max_completion_tokens, undefined)
   assert.equal(sentToProvider.reasoning_effort, 'high')
   await (

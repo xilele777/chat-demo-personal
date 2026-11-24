@@ -1,4 +1,5 @@
 import { HttpError, type Env } from './types.js'
+import { tokenBudgets } from './policy.js'
 
 export type ContextMessage = { role: string; content: unknown; [key: string]: unknown }
 export const CONTINUE_PROMPT =
@@ -40,10 +41,7 @@ export const limitContext = <T extends ContextMessage>(
   messages: T[],
   env: Env
 ): T[] => {
-  const limit = Number(env.MAX_INPUT_TOKENS ?? 64000)
-  if (!Number.isFinite(limit) || limit < 1024) {
-    throw new HttpError(503, 'Invalid MAX_INPUT_TOKENS')
-  }
+  const limit = tokenBudgets(env).input
   const result = [...messages]
   if (contextCost(system) + 16 >= limit) {
     throw new HttpError(
@@ -51,18 +49,14 @@ export const limitContext = <T extends ContextMessage>(
       '系统提示和 MCP 工具定义超过输入预算。请在设置中减少启用的工具，或提高 MAX_INPUT_TOKENS。'
     )
   }
-  const cost = () =>
-    contextCost(system) +
-    result.reduce(
-      (sum, message) =>
-        sum +
-        16 +
-        contextCost(message.content) +
-        contextCost(JSON.stringify(message.tool_calls ?? '')) +
-        contextCost(JSON.stringify(message.provider_output ?? '')),
-      0
-    )
-  while (cost() > limit) {
+  const messageCost = (message: T) =>
+    16 +
+    contextCost(message.content) +
+    contextCost(JSON.stringify(message.tool_calls ?? '')) +
+    contextCost(JSON.stringify(message.provider_output ?? ''))
+  const costs = result.map(messageCost)
+  let cost = contextCost(system) + costs.reduce((sum, value) => sum + value, 0)
+  while (cost > limit) {
     const next = result.findIndex(
       (message, index) =>
         index > 0 &&
@@ -87,6 +81,7 @@ export const limitContext = <T extends ContextMessage>(
       )
     }
     result.splice(0, next)
+    cost -= costs.splice(0, next).reduce((sum, value) => sum + value, 0)
   }
   return result
 }

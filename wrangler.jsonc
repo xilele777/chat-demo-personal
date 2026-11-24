@@ -24,8 +24,8 @@
     "OPENAI_API_STYLE": "responses",
     "UPSTREAM_BASE_URL": "https://ai.apizn.com/v1",
     "UPSTREAM_MODEL": "gpt-6.2-sol",
-    "MAX_OUTPUT_TOKENS": "8192",
-    "MAX_INPUT_TOKENS": "64000",
+    "MAX_OUTPUT_TOKENS": "32768",
+    "MAX_INPUT_TOKENS": "196608",
   },
   "observability": { "enabled": false },
 }

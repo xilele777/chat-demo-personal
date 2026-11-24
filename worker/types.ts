@@ -14,6 +14,17 @@ export interface Env {
   MAX_OUTPUT_TOKENS?: string
   OPENAI_REASONING_EFFORTS?: string
   MAX_INPUT_TOKENS?: string
+  MODEL_CONTEXT_TOKENS?: string
+  MAX_AGENT_ROUNDS?: string
+  MAX_TOOL_CALLS?: string
+  MAX_SEARCH_CALLS?: string
+  MAX_PAGE_READS?: string
+  MAX_RESEARCH_ROUNDS?: string
+  MAX_RESEARCH_TOKENS?: string
+  TOOL_CONCURRENCY?: string
+  SEARCH_MAX_RESULTS?: string
+  SEARCH_DEPTH?: 'basic' | 'advanced'
+  PAGE_MAX_CHARACTERS?: string
   TAVILY_API_KEY?: string
   /** Optional loopback endpoint for local integration tests only. */
   DEV_SEARCH_URL?: string
