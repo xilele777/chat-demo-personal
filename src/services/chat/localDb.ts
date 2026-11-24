@@ -6,7 +6,7 @@ import { searchSession, type HistorySearchResult } from './search.js'
 const DB_VERSION = 13
 const CLOUD_CACHE_LIMIT = 30
 
-export type PendingCloudSession = { id: string; session: Session }
+export type PendingCloudSession = { id: string; session: Session; version?: string }
 
 /** 文件原件按附件的本地 id 存储，所有引用同一 id 的消息共用一份；用于缩略图、打开查看，以及没有 serverId 时补传。 */
 export type StoredFile = {
@@ -154,11 +154,21 @@ export const removeCachedCloudSession = async (id: string): Promise<void> => {
 
 export const loadOutbox = async (): Promise<PendingCloudSession[]> =>
   (await getDB()).getAll('cloudOutbox')
-export const putOutbox = async (session: Session): Promise<void> => {
-  await (await getDB()).put('cloudOutbox', { id: session.id, session })
+export const putOutbox = async (session: Session, version: string): Promise<void> => {
+  await (await getDB()).put('cloudOutbox', { id: session.id, session, version })
 }
-export const removeOutbox = async (id: string): Promise<void> => {
-  await (await getDB()).delete('cloudOutbox', id)
+export const removeOutbox = async (id: string, version?: string): Promise<void> => {
+  const tx = (await getDB()).transaction('cloudOutbox', 'readwrite')
+  await Promise.all([
+    (async () => {
+      const current = await tx.store.get(id)
+      // A save finishing in this tab must not delete newer unsynced work from another tab.
+      if (version === undefined || current?.version === version) {
+        await tx.store.delete(id)
+      }
+    })(),
+    tx.done,
+  ])
 }
 export const loadStagingSessions = async (): Promise<Session[]> =>
   (await getDB()).getAll('sessionsStaging')

@@ -158,6 +158,11 @@ let historyEpoch = 0
 let initTask: Promise<void> | undefined
 const saveAttempts = new Map<string, number>()
 const sessionLoads = new Map<string, { promise: Promise<void> }>()
+/** Only explicit local metadata edits may override a freshly fetched detail. */
+const pendingMetadata = new Map<
+  string,
+  Partial<Pick<Session, 'title' | 'titleSource' | 'pinned'>>
+>()
 
 const touchSession = (id: string) => sessionAccess.set(id, ++accessSequence)
 
@@ -627,10 +632,18 @@ const ensureSessionLoaded = (id: string, prefetch = false): Promise<void> => {
         throw new Error(`Session ${id} is missing from local storage`)
       }
       const settled = settleInterrupted(normalizeSession(stored))
-      // 读取期间可能已在列表重命名，保留最新元数据，不能让旧读取覆盖它。
-      const session = sameSummary(settled, summary) ? settled : { ...settled, ...summary }
+      // The list can be older than this detail after another device saves. Preserve
+      // remote metadata unless the owner explicitly edited it locally while unloaded.
+      const edits = pendingMetadata.get(id)
+      const session = edits ? { ...settled, ...edits } : settled
+      pendingMetadata.delete(id)
       touchSession(id)
-      set((state) => ({ sessionCache: { ...state.sessionCache, [id]: session } }))
+      set((state) => ({
+        sessionCache: { ...state.sessionCache, [id]: session },
+        sessions: sortSessions(
+          state.sessions.map((item) => (item.id === id ? toSessionSummary(session) : item))
+        ),
+      }))
       if (session !== stored || (cloudMode && cloudDb.pendingIds().includes(id))) {
         persist(id)
       }
@@ -697,6 +710,7 @@ export const replaceHistory = async (write: () => Promise<void>): Promise<number
       throw error
     }
     sessionAccess.clear()
+    pendingMetadata.clear()
     unsavedSessions.clear()
     pendingFiles.clear()
     clearAllDrafts()
@@ -808,6 +822,7 @@ export const setSessionPinned = (id: string, pinned: boolean) => {
     updateSession(id, (session) => ({ ...session, pinned }))
     persist(id)
   } else {
+    pendingMetadata.set(id, { ...pendingMetadata.get(id), pinned })
     set((state) => ({
       sessions: state.sessions.map((session) =>
         session.id === id ? { ...session, pinned } : session
@@ -834,6 +849,7 @@ export const renameSession = (id: string, title: string) => {
     updateSession(id, (session) => ({ ...session, title, titleSource: 'manual' }))
     persist(id)
   } else {
+    pendingMetadata.set(id, { ...pendingMetadata.get(id), title, titleSource: 'manual' })
     set((state) => ({
       sessions: state.sessions.map((session) =>
         session.id === id ? { ...session, title } : session
@@ -876,6 +892,7 @@ const removeSessionData = async (id: string): Promise<boolean> => {
       return true
     }
     sessionLoads.delete(id)
+    pendingMetadata.delete(id)
     sessionAccess.delete(id)
     unsavedSessions.delete(id)
     pendingFiles.delete(id)

@@ -108,7 +108,8 @@ async function uploadOriginal(id: string, blob: Blob): Promise<void> {
 export const saveSession = (session: Session, files: local.StoredFile[] = []): Promise<void> => {
   // Save the latest local snapshot immediately, even while an earlier network save is queued.
   pending.set(session.id, session)
-  const durable = Promise.all([local.putOutbox(session), local.saveFiles(files)])
+  const version = crypto.randomUUID()
+  const durable = Promise.all([local.putOutbox(session, version), local.saveFiles(files)])
   // The serial network task observes this failure; mark it handled while it waits in the queue.
   void durable.catch(() => {})
   return serial(async () => {
@@ -157,7 +158,7 @@ export const saveSession = (session: Session, files: local.StoredFile[] = []): P
     cacheSession({ ...data, cloud: { revision: result.revision, generation: source.generation } })
     if (pending.get(session.id) === session) {
       pending.delete(session.id)
-      await local.removeOutbox(session.id)
+      await local.removeOutbox(session.id, version)
     }
   })
 }
