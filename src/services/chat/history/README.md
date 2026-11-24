@@ -1,6 +1,18 @@
 # 历史导入导出
 
-chat-demo 使用 `export_format_version: 3` 的历史会话 ZIP，导出文件名为 `deepseek_data-日期.zip`。字段定义见 [format.ts](./format.ts)，实际校验规则见 [schema.ts](./schema.ts)。
+chat-demo 默认导出 `format: "chat-demo-personal", version: 1` 的完整会话备份 ZIP，文件名为 `personal-chat-日期.zip`；继续兼容导入 `export_format_version: 3` 的旧 DeepSeek 迁移 ZIP。新格式需要本版本或更新版本导入，不能导入 DeepSeek 原站。
+
+## 完整会话备份
+
+实现见 [snapshot.ts](./snapshot.ts)。条目顺序为 `manifest.json` → `snapshot/sessions/{id}.json` → `snapshot/index.json` → `snapshot/files/{序号}`。会话保存当前消息结构：所有分支及每个节点的选择、原消息 ID、思考与签名、正文引用、网页内容、MCP 输入和输出、模型信息、提醒快照、处理时长、用量分项及错误信息。
+
+附件按本地文件 ID 去重，图片和非图片原件均保存，MIME 与字节大小写入索引；缺失原件写入 `missingFiles` 并保留消息中的文件信息。每个附件引用必须有原件声明或缺失声明，已声明的原件缺失、重复、大小不符，以及非法消息树或损坏 ZIP 均拒绝提交。写入复用现有暂存与原子替换流程。
+
+恢复清除云端 compare-and-swap 版本、供应商文件句柄及图片上传校验标记，附件在后续请求前重新上传。正在生成的回答转为停止，未完成的 MCP 操作标为错误并说明结果未知；不恢复待确认执行。API Key、访问密码、MCP 连接凭据、应用设置和未发送草稿不在备份内。已经不存在的附件原件无法由元数据重建。
+
+导出对已加载会话取开始时的内存快照，未加载详情逐条读取，因此并非跨设备、跨标签页的全局同一时刻快照。适合日常恢复；不等同于数据库和 R2 的灾难恢复备份。
+
+以下各节描述**旧 DeepSeek v3 迁移格式**，包括其兼容与数据丢失约束；这些限制不用于新完整会话备份。
 
 ## 归档结构
 

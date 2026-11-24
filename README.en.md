@@ -84,13 +84,15 @@ Cloud mode stores conversations in D1 and original attachments in R2. It saves a
 
 Recent conversation caching reduces loading time; startup still requires a network connection. Drafts and interface preferences remain per-device. Each cloud conversation has a 1.5 MB JSON limit.
 
+Each page stores its own pending snapshot. Saving or deleting in one page preserves other pages’ unsynced edits. On reopening, competing snapshots and edits from a deleted conversation or replaced history recover as separate local copies. A successful copy save removes only its matching source snapshot. Concurrent edits are not automatically merged; refresh open pages to use this version.
+
 Static mode stores API keys/settings in localStorage and conversations/original attachments in IndexedDB, isolated by browser profile and site origin. Messages, attachments, and speech content are sent to the configured API service when used. Cloud web search also sends search queries to Tavily.
 
-History export in Settings includes conversations and available original images, excluding API keys, settings, and original non-image attachments. A confirmed, validated import replaces **all history in the current mode**, including cloud history in cloud mode. Back up first. See the [archive documentation (Chinese)](src/services/chat/history/README.md).
+History export in Settings preserves all message branches and their selections, citations and sources, MCP activity, model metadata, processing durations, token breakdowns, and available image and non-image originals. Shared originals are stored once; missing originals are declared. API keys, settings and MCP connection credentials are excluded. Import accepts this app’s new snapshots and legacy DeepSeek v3 ZIPs. A confirmed, validated import replaces **all history in the current mode**. Back up first. See the [archive documentation (Chinese)](src/services/chat/history/README.md).
 
 Deleting cloud conversations does not immediately remove R2 attachments or files already uploaded to the model provider. Automatic attachment cleanup is not implemented.
 
-The ZIP is a migration archive, and does not fully round-trip MCP activity, model configuration, processing durations, or token breakdowns. See the [internal review (Chinese)](REVIEW.zh-CN.md) for the findings, fixes, and remaining priorities.
+New snapshots require this version or newer and cannot be imported into the original DeepSeek site. Restore clears provider upload handles, cloud revisions and stale tool approvals; unfinished tools are marked as having an unknown outcome. Legacy ZIPs retain their original data limitations. See the [internal review (Chinese)](REVIEW.zh-CN.md) for findings, fixes and remaining priorities.
 
 ## Development
 
@@ -104,7 +106,7 @@ The ZIP is a migration archive, and does not fully round-trip MCP activity, mode
 | `pnpm lint`                       | Lint code                                                                     |
 | `pnpm test:context`               | Check context budgets and retained historical sources                         |
 | `pnpm test:cloud`                 | Run integration checks with local D1/R2 and mock APIs; build cloud mode first |
-| `pnpm deploy:cloud`               | Build, apply remote database migrations, and deploy to Cloudflare              |
+| `pnpm deploy:cloud`               | Build, apply remote database migrations, and deploy to Cloudflare             |
 
 The frontend uses React and TypeScript. The cloud backend uses Cloudflare Workers, D1, and R2. UI and conversation logic live in `src/`, cloud adapters and storage in `worker/`, and database migrations in `migrations/`.
 
