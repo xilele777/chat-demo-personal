@@ -3,6 +3,19 @@ import { spawn } from 'node:child_process'
 import { createServer } from 'node:net'
 import { once } from 'node:events'
 
+const checks = [
+  'check-ui',
+  'check-interactions',
+  'check-streaming-ui',
+  'check-reliability-ui',
+  'check-backup-ui',
+  'check-outbox-ui',
+]
+const selected = process.argv.slice(2)
+if (selected.some((name) => !checks.includes(name))) {
+  throw new Error('Choose a known browser check name')
+}
+
 const freePort = async () => {
   const server = createServer()
   server.listen(0, '127.0.0.1')
@@ -56,13 +69,8 @@ try {
       process.stderr.write(chunk)
     })
   })
-  for (const name of [
-    'check-ui',
-    'check-interactions',
-    'check-streaming-ui',
-    'check-reliability-ui',
-  ]) {
-    const check = spawn(process.execPath, [`scripts/${name}.mjs`], {
+  for (const name of selected.length ? selected : checks) {
+    const check = spawn(process.execPath, ['--import', 'tsx', `scripts/${name}.mjs`], {
       env,
       stdio: 'inherit',
       windowsHide: true,
