@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { cloudMode, useCloud } from '../../services/cloud.js'
-import { availableModels, loadModels, useModels } from '../../services/models.js'
+import { availableModels, loadModels, modelCapabilities, useModels } from '../../services/models.js'
 import { setCustomModels, setModel, useSettings } from '../../services/settings.js'
 import { Button } from '../base/Button.js'
 import { Select } from '../base/Select.js'
@@ -16,6 +16,10 @@ export const ModelSettings = () => {
   const selected = useSettings((state) => state.model) || config?.model || ''
   const [value, setValue] = useState('')
   const options = availableModels(config?.model, custom, models, selected)
+  const capabilities = modelCapabilities(selected)
+  const budgets = capabilities
+    ? { input: capabilities.inputTokens, output: capabilities.outputTokens }
+    : config?.tokenBudgets
   useEffect(() => {
     if (cloudMode && !models.length) {
       void loadModels()
@@ -37,15 +41,33 @@ export const ModelSettings = () => {
           disabled={!options.length}
         />
       </div>
-      {config?.tokenBudgets ? (
-        <div className={styles.description}>
+      {budgets ? (
+        <div className={styles.description} role="status" aria-live="polite">
           <p>
             {t('modelTokenBudgets', {
-              input: config.tokenBudgets.input.toLocaleString(),
-              output: config.tokenBudgets.output.toLocaleString(),
+              input: budgets.input.toLocaleString(),
+              output: budgets.output.toLocaleString(),
             })}
           </p>
           <p>{t('modelTokenBudgetsHelp')}</p>
+          {capabilities ? (
+            <>
+              <p>
+                {capabilities.contextTokens === null
+                  ? t('modelContextUnknown')
+                  : t('modelContextWindow', {
+                      tokens: capabilities.contextTokens.toLocaleString(),
+                    })}
+              </p>
+              <p>
+                {t('modelConfiguredCapabilities', {
+                  images: t(capabilities.images ? 'modelEnabled' : 'modelDisabled'),
+                  tools: t(capabilities.tools ? 'modelEnabled' : 'modelDisabled'),
+                })}
+              </p>
+              {capabilities.source === 'fallback' ? <p>{t('modelFallback')}</p> : null}
+            </>
+          ) : null}
         </div>
       ) : null}
       <Button variant="outlined" size="m" disabled={loading} onClick={() => void loadModels()}>

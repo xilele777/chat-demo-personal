@@ -1,11 +1,12 @@
 import { create } from 'zustand'
 import { clearSessionSelection } from './selection.js'
-import { cloudMode, cloudFetch, cloudJson, useCloud } from '../cloud.js'
+import { cloudMode, useCloud } from '../cloud.js'
 import * as cloudDb from './cloudDb.js'
 import * as localDb from './localDb.js'
 import { translate } from '../../i18n/index.js'
 import { createId } from '../../utils/id.js'
 import { ApiError, streamMessage } from '../api/client.js'
+import { withSignal } from '../api/streamLimits.js'
 import type { ChatModel, CreateMessageRequest } from '../api/types.js'
 import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
 import {
@@ -25,6 +26,10 @@ import {
 } from './branches.js'
 import { activeSessionKey } from './draftStorage.js'
 import { selectedModel, modelReasoningEfforts } from '../models.js'
+import { capabilitiesForModel } from '../modelCapabilities.js'
+import { createTitleGenerator } from './titleGeneration.js'
+import { recoverToolOperations } from './toolRecovery.js'
+import { acquireChatWork, bindChatCoordination } from './coordination.js'
 import { addUsage } from './usage.js'
 import * as db from './db.js'
 import {
@@ -39,7 +44,6 @@ import {
   applyEvent,
   canContinueReply,
   getContextRounds,
-  getReplyText,
   settleReply,
   toRequestMessages,
 } from './reply.js'
@@ -472,6 +476,9 @@ export const uploadLocalHistory = async (): Promise<number> => {
 
 /** 离开前先合并尚未绘制的增量；隐藏期间浏览器可能暂停动画帧。 */
 export const bindChatPersistence = () => {
+  const unbindCoordination = bindChatCoordination(() => {
+    void syncCloudSessions()
+  })
   const save = () => {
     if (get().importingHistory) {
       return
@@ -494,6 +501,7 @@ export const bindChatPersistence = () => {
   document.addEventListener('visibilitychange', onVisibilityChange)
   window.addEventListener('pagehide', save)
   return () => {
+    unbindCoordination()
     document.removeEventListener('visibilitychange', onVisibilityChange)
     window.removeEventListener('pagehide', save)
   }
@@ -505,12 +513,14 @@ const createReply = (): AssistantMessage => {
   const config = useCloud.getState().config
   const model = cloudMode ? selectedModel() : MODEL
   const effort = useSettings.getState().reasoningEffort
+  const capabilities = config?.modelCatalog
+    ? capabilitiesForModel(config.modelCatalog, model)
+    : undefined
   const reasoningRequested =
     cloudMode &&
     config?.protocol === 'openai' &&
     effort !== 'none' &&
-    modelReasoningEfforts(model, config.reasoningEfforts, config.reasoningEffortsAutomatic).length >
-      0
+    modelReasoningEfforts(model).length > 0
   return {
     id: createId(),
     role: 'assistant',
@@ -518,7 +528,7 @@ const createReply = (): AssistantMessage => {
     model,
     reasoningEffort: useSettings.getState().reasoningEffort,
     thinking: reasoningRequested || (thinking && (!cloudMode || Boolean(config?.thinking))),
-    search: search && (!cloudMode || Boolean(useCloud.getState().config?.search)),
+    search: search && (!cloudMode || (Boolean(config?.search) && capabilities?.tools !== false)),
     prefix: true,
     status: 'pending',
     blocks: [],
@@ -541,6 +551,23 @@ const settleInterrupted = (session: Session): Session => {
         ? settleReply(m, 'stopped', session.updatedAt)
         : m
     ),
+  }
+}
+
+export const refreshToolOperations = async (id: string): Promise<void> => {
+  const before = getSession(id)
+  if (!cloudMode || !before || get().streaming[id] || get().importingHistory) {
+    return
+  }
+  const recovered = await recoverToolOperations(before)
+  if (
+    getSession(id) === before &&
+    !get().streaming[id] &&
+    !get().importingHistory &&
+    recovered !== before
+  ) {
+    updateSession(id, () => recovered)
+    persist(id)
   }
 }
 
@@ -648,6 +675,9 @@ const ensureSessionLoaded = (id: string, prefetch = false): Promise<void> => {
         persist(id)
       }
       trimSessionCache()
+      if (cloudMode) {
+        void refreshToolOperations(id).catch(() => {})
+      }
     } catch (error) {
       if (epoch === historyEpoch && sessionLoads.get(id) === load) {
         set((state) => ({ sessionLoadErrors: { ...state.sessionLoadErrors, [id]: true } }))
@@ -690,12 +720,15 @@ export const replaceHistory = async (write: () => Promise<void>): Promise<number
     throw new Error('History replacement is already in progress')
   }
   set({ importingHistory: true })
+  let releaseWork: (() => void) | undefined
   try {
     for (const controller of Object.values(get().streaming)) {
       controller.abort()
     }
     // 已开始的单条删除先同步到内存，避免本次替换失败后列表残留已被删除的记录。
     await Promise.all(deletionTasks)
+    await waitForIdle()
+    releaseWork = await acquireChatWork()
     historyEpoch += 1
     initTask = undefined
     sessionLoads.clear()
@@ -728,6 +761,7 @@ export const replaceHistory = async (write: () => Promise<void>): Promise<number
     })
     return summaries.length
   } finally {
+    releaseWork?.()
     set({ importingHistory: false })
     retrySaveSessions()
     const { activeId, ready } = get()
@@ -834,7 +868,6 @@ export const setSessionPinned = (id: string, pinned: boolean) => {
 }
 
 const manuallyNamedSessions = new Set<string>()
-const generatingTitles = new Set<string>()
 
 export const renameSession = (id: string, title: string) => {
   manuallyNamedSessions.add(id)
@@ -1369,58 +1402,15 @@ const waitForRetry = (attempt: number, signal: AbortSignal) =>
     signal.addEventListener('abort', onAbort, { once: true })
   })
 
-const generateSessionTitle = async (
-  sessionId: string,
-  question: UserMessage,
-  reply: AssistantMessage
-) => {
-  const session = getSession(sessionId)
-  const epoch = historyEpoch
-  if (
-    !cloudMode ||
-    session?.titleSource !== 'pending' ||
-    generatingTitles.has(sessionId) ||
-    manuallyNamedSessions.has(sessionId) ||
-    reply.status !== 'done' ||
-    reply.stopReason === 'refusal' ||
-    !getReplyText(reply).trim()
-  ) {
-    return
-  }
-  generatingTitles.add(sessionId)
-  try {
-    const result = (await (
-      await cloudFetch(
-        '/title',
-        cloudJson('POST', {
-          question: question.content || question.files.map((file) => file.name).join(', '),
-          answer: getReplyText(reply),
-        })
-      )
-    ).json()) as { title: string }
-    if (
-      epoch !== historyEpoch ||
-      deletingSessions.has(sessionId) ||
-      manuallyNamedSessions.has(sessionId) ||
-      getSession(sessionId)?.titleSource !== 'pending' ||
-      getSession(sessionId)?.title !== session.title ||
-      typeof result.title !== 'string' ||
-      !result.title.trim()
-    ) {
-      return
-    }
-    updateSession(sessionId, (current) => ({
-      ...current,
-      title: result.title.trim().slice(0, 60),
-      titleSource: 'generated',
-    }))
-    persist(sessionId)
-  } catch {
-    // Keep the provisional title. A later successful reply can retry without interrupting the answer.
-  } finally {
-    generatingTitles.delete(sessionId)
-  }
-}
+const generateSessionTitle = createTitleGenerator({
+  enabled: cloudMode,
+  getSession,
+  epoch: () => historyEpoch,
+  blocked: (id) =>
+    get().importingHistory || deletingSessions.has(id) || manuallyNamedSessions.has(id),
+  updateSession,
+  persist,
+})
 
 /**
  * 请求并消费流：先补齐附件的 serverId，再发请求；流式增量按动画帧刷新内存，完成、失败或停止后落盘。
@@ -1433,7 +1423,13 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
     titleRequests.add(controller)
   }
   set((state) => ({ streaming: { ...state.streaming, [sessionId]: controller } }))
-  let reply = { ...initial, usage: undefined } as AssistantMessage
+  let reply = {
+    ...initial,
+    usage: undefined,
+    contextReports: request.prefix?.contextReports,
+    branchMemory: request.prefix?.branchMemory,
+    operationRequestId: cloudMode ? crypto.randomUUID() : undefined,
+  } as AssistantMessage
   let processingStart = 0
   const previousProcessingSeconds = request.prefix?.processingSeconds ?? 0
   const processingNow = () =>
@@ -1441,6 +1437,27 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       ? previousProcessingSeconds + Math.max(0, (performance.now() - processingStart) / 1000)
       : previousProcessingSeconds
   const visibleReply = () => ({ ...reply, usage: addUsage(request.prefix?.usage, reply.usage) })
+  const waitForCheckpoint = async () => {
+    if (!cloudMode) {
+      return
+    }
+    const snapshot = getSession(sessionId)
+    if (!snapshot) {
+      throw new Error('Conversation is unavailable')
+    }
+    try {
+      await withSignal(
+        cloudDb.waitForSnapshot(snapshot),
+        AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)])
+      )
+      controller.signal.throwIfAborted()
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw error
+      }
+      throw new ApiError('protocol', { key: 'replyCheckpointFailed' })
+    }
+  }
   let frame = 0
   const flush = () => {
     cancelAnimationFrame(frame)
@@ -1448,6 +1465,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
     updateReply(sessionId, visibleReply())
   }
   streamFlushes.set(sessionId, flush)
+  let releaseWork: (() => void) | undefined
 
   try {
     for (let attempt = 0; ; attempt += 1) {
@@ -1455,6 +1473,19 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       let preparing = true
       let receivedContent = false
       try {
+        if (!releaseWork) {
+          preparing = false
+          releaseWork = await acquireChatWork(sessionId)
+          controller.signal.throwIfAborted()
+          if (cloudMode) {
+            const source = getSession(sessionId)
+            if (!source) {
+              throw new Error('Conversation is unavailable')
+            }
+            await cloudDb.verifyGenerationSource(source)
+          }
+          preparing = true
+        }
         const prepared = await prepareFiles(sessionId, request, controller.signal)
         preparing = false
         // 附件就绪后获取本轮信息；续写沿用原回答快照，重新生成的快照独立保存。
@@ -1464,6 +1495,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         reply = { ...reply, latestReminder }
         updateReply(sessionId, visibleReply())
         persist(sessionId)
+        // Preserve the request's recovery key before the Worker can dispatch any tool.
+        await waitForCheckpoint()
         const messages = toRequestMessages(
           prepared.history,
           prepared.question,
@@ -1482,6 +1515,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         const events = streamMessage(
           useSettings.getState().apiKey ?? '',
           {
+            ...(reply.operationRequestId ? { operationRequestId: reply.operationRequestId } : {}),
             model: initial.model ?? MODEL,
             system:
               cloudMode && useCloud.getState().config?.protocol !== 'deepseek'
@@ -1493,22 +1527,22 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             useCloud.getState().config?.protocol === 'openai' &&
             initial.reasoningEffort &&
             initial.reasoningEffort !== 'auto' &&
-            modelReasoningEfforts(
-              initial.model ?? selectedModel(),
-              useCloud.getState().config?.reasoningEfforts,
-              useCloud.getState().config?.reasoningEffortsAutomatic
-            ).includes(initial.reasoningEffort)
+            modelReasoningEfforts(initial.model ?? selectedModel()).includes(
+              initial.reasoningEffort
+            )
               ? { reasoning_effort: initial.reasoningEffort }
               : {}),
             safety_check: SAFETY_CHECK,
             tools: serverTools(initial.search ?? false),
             ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),
           },
-          controller.signal
+          controller.signal,
+          cloudMode ? useCloud.getState().config?.generationTimeouts : undefined
         )
         const blockIndexes = new Map<number, number>()
         for await (const event of events) {
-          receivedContent ||= event.type === 'content_block_start'
+          receivedContent ||=
+            event.type === 'content_block_start' || event.type === 'mcp_tool_status'
           if (
             event.type === 'message_delta' &&
             (event.delta.stop_reason === 'end_turn' || event.delta.stop_reason === 'max_tokens') &&
@@ -1528,10 +1562,16 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             requestStartedAt + performance.now() - processingStart,
             blockIndexes
           )
-          if (event.type === 'message_delta' && event.usage && !event.delta.stop_reason) {
+          if (
+            event.type === 'mcp_tool_status' ||
+            event.type === 'context_report' ||
+            event.type === 'branch_memory' ||
+            (event.type === 'message_delta' && event.usage && !event.delta.stop_reason)
+          ) {
             // A completed tool stage must survive cancellation or closing the page during the next stage.
             flush()
             persist(sessionId)
+            await waitForCheckpoint()
           } else if (document.visibilityState === 'hidden') {
             flush()
           } else {
@@ -1581,6 +1621,9 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           reply = settleReply(reply, 'error', Date.now(), {
             kind: 'protocol',
             message: error instanceof Error ? error.message : String(error),
+            ...(error instanceof Error && error.name === 'TimeoutError'
+              ? { localMessage: { key: 'replyGenerationTimeout' } }
+              : {}),
           })
         }
         break
@@ -1595,12 +1638,19 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
     streamFlushes.delete(sessionId)
     cancelAnimationFrame(frame)
     updateReply(sessionId, finalReply)
-    set((state) => ({
-      streaming: Object.fromEntries(
-        Object.entries(state.streaming).filter(([id]) => id !== sessionId)
-      ),
-    }))
     persist(sessionId)
-    void generateSessionTitle(sessionId, request.question, finalReply)
+    try {
+      await generateSessionTitle(sessionId, request.question, finalReply, controller.signal)
+      if (cloudMode) {
+        await cloudDb.settleSaves()
+      }
+    } finally {
+      set((state) => ({
+        streaming: Object.fromEntries(
+          Object.entries(state.streaming).filter(([id]) => id !== sessionId)
+        ),
+      }))
+      releaseWork?.()
+    }
   }
 }

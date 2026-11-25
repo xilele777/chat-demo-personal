@@ -36,7 +36,7 @@ import { Spectrum } from './Spectrum.js'
 import { useTranslate } from '../../i18n/index.js'
 import { cloudMode, useCloud } from '../../services/cloud.js'
 import styles from './ChatInput.module.css'
-import { modelReasoningEfforts } from '../../services/models.js'
+import { modelCapabilities, modelReasoningEfforts } from '../../services/models.js'
 import type { ReasoningEffort } from '../../services/api/types.js'
 
 /** 输入框：自适应高度的文本框 + 文件 + 深度思考与智能搜索开关 + 语音输入 + 发送 / 停止 */
@@ -49,7 +49,6 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const t = useTranslate()
   const capabilities = useCloud((s) => s.config)
   const thinkingEnabled = !cloudMode || Boolean(capabilities?.thinking)
-  const searchEnabled = !cloudMode || Boolean(capabilities?.search)
   const speechEnabled = !cloudMode || Boolean(capabilities?.speech)
   const draft = useDrafts((state) => state.drafts.get(sessionId) ?? EMPTY_DRAFT)
   const draftStorageError = useDrafts((state) => state.storageError)
@@ -61,11 +60,10 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   )
   const reasoningEffort = useSettings((state) => state.reasoningEffort)
   const model = useSettings((state) => state.model) || capabilities?.model || ''
-  const effortOptions = modelReasoningEfforts(
-    model,
-    capabilities?.reasoningEfforts,
-    capabilities?.reasoningEffortsAutomatic
-  ) as Exclude<ReasoningEffort, 'auto'>[]
+  const selectedCapabilities = modelCapabilities(model)
+  const searchEnabled =
+    !cloudMode || (Boolean(capabilities?.search) && selectedCapabilities?.tools !== false)
+  const effortOptions = modelReasoningEfforts(model) as Exclude<ReasoningEffort, 'auto'>[]
   const selectedEffort = effortOptions.includes(
     reasoningEffort as Exclude<typeof reasoningEffort, 'auto'>
   )

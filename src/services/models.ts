@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { cloudFetch, useCloud } from './cloud.js'
 import { useSettings } from './settings.js'
+import { capabilitiesForModel } from './modelCapabilities.js'
 
 export const useModels = create<{ models: string[]; loading: boolean; error: string | null }>(
   () => ({ models: [], loading: false, error: null })
@@ -44,5 +45,9 @@ export const loadModels = (): Promise<void> => {
 export const selectedModel = () =>
   useSettings.getState().model || useCloud.getState().config?.model || 'deepseek-flash'
 
-export const modelReasoningEfforts = (model: string, configured: string[] = [], automatic = true) =>
-  automatic ? (/^(gpt-[5-9]|o[1-9])/.test(model) ? ['low', 'medium', 'high'] : []) : configured
+export const modelCapabilities = (model: string) => {
+  const catalog = useCloud.getState().config?.modelCatalog
+  return catalog ? capabilitiesForModel(catalog, model) : undefined
+}
+export const modelReasoningEfforts = (model: string) =>
+  modelCapabilities(model)?.reasoningEfforts ?? []

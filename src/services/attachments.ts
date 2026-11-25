@@ -7,6 +7,8 @@ import type { FilePurpose } from './api/types.js'
 import { loadFile } from './chat/db.js'
 import type { FileAttachment } from './chat/types.js'
 import { ACCEPT_FILE_EXTS } from './uploadExts.js'
+import { cloudMode, useCloud } from './cloud.js'
+import { modelCapabilities, selectedModel } from './models.js'
 
 /** 允许上传的扩展名，按扩展名白名单过滤，清单见 uploadExts.ts */
 export const ACCEPTED_EXTS = ACCEPT_FILE_EXTS
@@ -49,6 +51,28 @@ const getMaxSizeMB = (file: File) =>
 export const validateFiles = (files: File[], currentCount: number): TranslationMessage | null => {
   if (files.some((file) => !isAcceptedExt(file.name))) {
     return { key: 'uploadUnsupportedFormat' }
+  }
+  if (cloudMode && useCloud.getState().config?.protocol !== 'deepseek') {
+    const images = files.filter((file) => isImage(resolveMimeType(file)))
+    if (images.length && modelCapabilities(selectedModel())?.images === false) {
+      return { key: 'modelImagesUnavailable' }
+    }
+    const image = images.find((file) => file.size > 8 * 1024 * 1024)
+    if (image) {
+      return { key: 'uploadMaxMBSize', params: { size: 8 } }
+    }
+    if (
+      files.some(
+        (file) =>
+          !isImage(resolveMimeType(file)) &&
+          /\.(pdf|docx?|pptx?|xlsx?|epub|mobi|zip)$/i.test(file.name)
+      )
+    ) {
+      return { key: 'uploadGenericUnsupported' }
+    }
+    if (files.some((file) => !isImage(resolveMimeType(file)) && file.size > 2 * 1024 * 1024)) {
+      return { key: 'uploadMaxMBSize', params: { size: 2 } }
+    }
   }
   const oversized = files.find((file) => file.size > getMaxSizeMB(file) * 1024 * 1024)
   if (oversized) {

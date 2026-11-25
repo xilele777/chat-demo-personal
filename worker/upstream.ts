@@ -2,7 +2,14 @@ import { readServerSentEvents } from '../src/services/api/sse.js'
 import { providerErrorMessage } from '../src/services/api/errorMessage.js'
 import { HttpError, json, readJsonObject, type Env } from './types.js'
 import { reasoningEfforts } from './config.js'
-import { limitContext, CONTINUE_PROMPT } from './context.js'
+import {
+  limitContext,
+  contextCost,
+  CONTINUE_PROMPT,
+  CONTEXT_EVIDENCE_INSTRUCTIONS,
+} from './context.js'
+import { bodyLimits, readBody } from './bodyLimits.js'
+import { modelCatalog, resolveModelCapabilities, selectModel } from './modelConfig.js'
 import { connectMcpTools } from './mcp.js'
 import { ToolRuntime } from './toolRuntime.js'
 import { assistantInstructions, tokenBudgets } from './policy.js'
@@ -12,13 +19,11 @@ import { readOpenAIEvents, responsesInput } from './openaiResponses.js'
 import { limitWebContext } from './webPage.js'
 import type { MessageUsage } from '../src/services/api/types.js'
 import { searchRequested } from './search.js'
+import { fetchProvider, providerText } from './providerTransport.js'
+import { buildBranchMemory, memoryText } from './branchMemory.js'
+import { observe } from './observability.js'
 
-type Block = {
-  type: string
-  text?: string
-  source?: { file_id?: string; [key: string]: unknown }
-  [key: string]: unknown
-}
+import { consumeAnthropic, type Block } from './anthropicStream.js'
 type Message = { role: string; content: string | Block[]; [key: string]: unknown }
 type ChatRequest = {
   system: string
@@ -62,7 +67,7 @@ async function check(response: Response): Promise<Response> {
   }
   if (!response.ok) {
     // Never return upstream headers or credentials. The provider's JSON/text error is useful to the owner.
-    const text = (await response.text()).slice(0, 4000)
+    const text = (await providerText(response)).slice(0, 4000)
     throw new HttpError(
       response.status,
       providerErrorMessage(text) || `Upstream HTTP ${response.status}`
@@ -79,7 +84,11 @@ function binaryBase64(bytes: Uint8Array): string {
   return btoa(value)
 }
 
-async function expandFiles(content: string | Block[], env: Env): Promise<string | Block[]> {
+async function expandFiles(
+  content: string | Block[],
+  env: Env,
+  budget: { bytes: number; count: number }
+): Promise<string | Block[]> {
   if (typeof content === 'string') {
     return content
   }
@@ -92,6 +101,15 @@ async function expandFiles(content: string | Block[], env: Env): Promise<string 
     if (block.type !== 'image' && block.type !== 'document') {
       continue
     }
+    if (++budget.count > bodyLimits.files) {
+      throw new HttpError(413, 'Too many attachments in the retained conversation (maximum 50)')
+    }
+    if (block.type === 'image' && !resolveModelCapabilities(env).images) {
+      throw new HttpError(
+        422,
+        'Images are not enabled for this model. Configure its model profile or use a model with image support.'
+      )
+    }
     const id = block.source?.file_id
     if (!id || !/^local_[a-zA-Z0-9_-]+$/.test(id)) {
       throw new HttpError(400, 'Re-upload this attachment for the selected provider')
@@ -101,6 +119,19 @@ async function expandFiles(content: string | Block[], env: Env): Promise<string 
       throw new HttpError(400, 'Attachment unavailable; add it again')
     }
     const type = object.httpMetadata?.contentType ?? 'application/octet-stream'
+    if (type.startsWith('image/') && !resolveModelCapabilities(env).images) {
+      await object.body.cancel().catch(() => {})
+      throw new HttpError(422, 'Images are not enabled for this model')
+    }
+    const max = type.startsWith('image/') ? bodyLimits.image : bodyLimits.text
+    budget.bytes += object.size
+    if (object.size > max || budget.bytes > bodyLimits.expanded) {
+      await object.body.cancel().catch(() => {})
+      throw new HttpError(
+        413,
+        'Attachments exceed the per-file or 16 MiB conversation expansion limit'
+      )
+    }
     if (type.startsWith('image/')) {
       const data = binaryBase64(new Uint8Array(await object.arrayBuffer()))
       result.push(
@@ -121,6 +152,7 @@ async function expandFiles(content: string | Block[], env: Env): Promise<string 
 async function messages(body: ChatRequest, env: Env) {
   const result: Message[] = []
   let reminder = ''
+  let contextRound = 0
   for (const message of body.messages) {
     if (message.role === 'latest_reminder') {
       reminder = String(message.content)
@@ -129,7 +161,7 @@ async function messages(body: ChatRequest, env: Env) {
     if (!['user', 'assistant'].includes(message.role)) {
       continue
     }
-    let content = await expandFiles(message.content, env)
+    let content = message.content
     if (message.role === 'assistant' && Array.isArray(content)) {
       content = content
         .filter((b) => b.type === 'text')
@@ -137,7 +169,15 @@ async function messages(body: ChatRequest, env: Env) {
         .join('\n\n')
     }
     if (typeof content === 'string' ? content.trim() : content.length) {
-      result.push({ role: message.role, content })
+      if (message.role === 'user') {
+        contextRound++
+      }
+      result.push({
+        role: message.role,
+        content,
+        contextRound,
+        ...(typeof message.contextId === 'string' ? { contextId: message.contextId } : {}),
+      })
     }
   }
   // Generic providers do not share DeepSeek's assistant-prefill semantics.
@@ -148,7 +188,83 @@ async function messages(body: ChatRequest, env: Env) {
       continuation: true,
     })
   }
-  return { system: [body.system, reminder].filter(Boolean).join('\n\n'), messages: result }
+  const system = [body.system, reminder, CONTEXT_EVIDENCE_INSTRUCTIONS].filter(Boolean).join('\n\n')
+  env.contextTrace = {
+    totalRounds: contextRound,
+    round: 0,
+    sources: result
+      .filter((message) => !message.continuation)
+      .map((message) => ({
+        ...message,
+        content:
+          body.messages.find((source) => source.contextId === message.contextId)?.content ??
+          message.content,
+      })),
+  }
+  const metadata = new Map<string, R2Object | null>()
+  const preflight = []
+  let references = 0
+  for (const message of result) {
+    let cost = 0
+    if (Array.isArray(message.content)) {
+      for (const block of message.content) {
+        if (block.type !== 'image' && block.type !== 'document') {
+          cost += contextCost(block)
+          continue
+        }
+        if (++references > 2000) {
+          throw new HttpError(413, 'Too many attachment references')
+        }
+        const id = block.source?.file_id
+        if (!id || !/^local_[a-zA-Z0-9_-]+$/.test(id)) {
+          throw new HttpError(400, 'Re-upload this attachment for the selected provider')
+        }
+        if (!metadata.has(id)) {
+          metadata.set(id, await env.FILES.head(`provider/${id}`))
+        }
+        const object = metadata.get(id)
+        cost += block.type === 'image' ? 4096 : (object?.size ?? bodyLimits.text) * 2 + 128
+      }
+    } else {
+      cost = contextCost(message.content)
+    }
+    preflight.push({ ...message, estimatedContentTokens: cost })
+  }
+  const retained = limitContext(system, preflight, env)
+  const budget = { bytes: 0, count: 0 }
+  let retainedBytes = 0
+  let retainedFiles = 0
+  for (const message of retained) {
+    if (!Array.isArray(message.content)) {
+      continue
+    }
+    for (const block of message.content) {
+      if (block.type !== 'image' && block.type !== 'document') {
+        continue
+      }
+      const object = metadata.get(block.source?.file_id ?? '')
+      const image = object?.httpMetadata?.contentType?.startsWith('image/')
+      retainedBytes += object?.size ?? 0
+      retainedFiles++
+      if (
+        retainedFiles > bodyLimits.files ||
+        retainedBytes > bodyLimits.expanded ||
+        (object && object.size > (image ? bodyLimits.image : bodyLimits.text))
+      ) {
+        throw new HttpError(413, 'Attachments exceed the per-file or conversation expansion limit')
+      }
+      if ((image || block.type === 'image') && !resolveModelCapabilities(env).images) {
+        throw new HttpError(422, 'Images are not enabled for this model')
+      }
+    }
+  }
+  const expanded: Message[] = []
+  for (const message of retained) {
+    const original: Message & { estimatedContentTokens?: number } = { ...message }
+    delete original.estimatedContentTokens
+    expanded.push({ ...original, content: await expandFiles(original.content, env, budget) })
+  }
+  return { system, messages: expanded }
 }
 
 async function* normalizeOpenAI(
@@ -309,27 +425,112 @@ async function genericProvider(
   if (effort !== undefined && !reasoningEfforts(env).includes(effort as never)) {
     throw new HttpError(422, 'This reasoning effort is not configured for the selected provider')
   }
-  const history = limitWebContext(
+  let history = limitWebContext(
     body.system + turnInstructions + (extra.tools ? JSON.stringify(extra.tools) : ''),
     body.messages,
     env
   )
+  let memory: import('../src/services/chat/branchMemory.js').BranchMemory | undefined
+  if (env.contextTrace?.sources) {
+    try {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const first = Number(history.find((message) => message.contextRound)?.contextRound ?? 1)
+        memory = await buildBranchMemory(
+          env.contextTrace.sources,
+          first,
+          Math.min(1024, Math.floor(tokenBudgets(env).input / 8))
+        )
+        if (!memory) {
+          break
+        }
+        const trimmed = limitWebContext(
+          body.system +
+            turnInstructions +
+            (extra.tools ? JSON.stringify(extra.tools) : '') +
+            memoryText(memory) +
+            ' '.repeat(48),
+          body.messages,
+          env
+        )
+        if (
+          trimmed[0]?.contextRound === history[0]?.contextRound &&
+          trimmed[0]?.contextId === history[0]?.contextId
+        ) {
+          break
+        }
+        history = trimmed
+        if (attempt === 3) {
+          memory = undefined
+        }
+      }
+    } catch {
+      memory = undefined
+    }
+    env.contextTrace.memory = memory
+  }
   const providerHistory = history.map((message) => {
     const providerMessage = { ...message }
     delete providerMessage.continuation
+    delete providerMessage.estimatedContentTokens
+    delete providerMessage.contextRound
+    delete providerMessage.contextId
     return providerMessage
   })
+  if (memory) {
+    providerHistory.unshift({ role: 'user', content: memoryText(memory) })
+  }
+  if (env.contextTrace) {
+    const first = Number(history.find((message) => message.contextRound)?.contextRound ?? 1)
+    const budget = tokenBudgets(env)
+    env.contextTrace.report = {
+      model: env.UPSTREAM_MODEL,
+      round: env.contextTrace.round++,
+      totalRounds: env.contextTrace.totalRounds,
+      retainedRounds: env.contextTrace.totalRounds - first + 1,
+      omittedRounds: first - 1,
+      firstRetainedRound: first,
+      estimatedInputTokens:
+        contextCost(
+          body.system + turnInstructions + (extra.tools ? JSON.stringify(extra.tools) : '')
+        ) +
+        (memory?.estimatedTokens ?? 0) +
+        history.reduce(
+          (sum, message) =>
+            sum +
+            16 +
+            contextCost(message.content) +
+            contextCost(JSON.stringify(message.tool_calls ?? '')) +
+            contextCost(JSON.stringify(message.provider_output ?? '')),
+          0
+        ),
+      inputBudget: budget.input,
+      outputBudget: budget.output,
+      contextWindow: resolveModelCapabilities(env).contextTokens,
+      retainedQuestionIds: history.flatMap((message) =>
+        message.role === 'user' && typeof message.contextId === 'string' ? [message.contextId] : []
+      ),
+    }
+    observe(env, 'context', {
+      inputTokens: env.contextTrace.report.estimatedInputTokens,
+      inputBudget: budget.input,
+      outputBudget: budget.output,
+    })
+  }
   const payload: Record<string, unknown> = responses
     ? {
         model: env.UPSTREAM_MODEL,
         input: [{ role: 'developer', content: body.system }, ...responsesInput(providerHistory)],
         ...(turnInstructions ? { instructions: turnInstructions } : {}),
-        reasoning: { summary: 'detailed', ...(effort ? { effort } : {}) },
-        include: ['reasoning.encrypted_content'],
+        ...(reasoningEfforts(env).length
+          ? {
+              reasoning: { summary: 'detailed', ...(effort ? { effort } : {}) },
+              include: ['reasoning.encrypted_content'],
+            }
+          : {}),
         store: false,
         stream: true,
         ...extra,
-        max_output_tokens: extra.max_completion_tokens ?? max,
+        max_output_tokens: Math.min(Number(extra.max_completion_tokens ?? max), max),
         ...(Array.isArray(extra.tools)
           ? { tools: extra.tools.map((tool) => ({ type: 'function', ...tool.function })) }
           : {}),
@@ -361,8 +562,12 @@ async function genericProvider(
     delete payload.max_tokens
     delete payload.stream_options
   }
+  if (!responses) {
+    const field = env.UPSTREAM_PROTOCOL === 'openai' ? 'max_completion_tokens' : 'max_tokens'
+    payload[field] = Math.min(Number(payload[field]), max)
+  }
   const send = () =>
-    fetch(
+    fetchProvider(
       `${base(env)}/${responses ? 'responses' : env.UPSTREAM_PROTOCOL === 'openai' ? 'chat/completions' : 'messages'}`,
       {
         method: 'POST',
@@ -370,7 +575,8 @@ async function genericProvider(
         body: JSON.stringify(payload),
         signal,
         redirect: 'manual',
-      }
+      },
+      env
     )
   let response = await send()
   // Retry only rejected optional compatibility fields; explicit effort and tool requests stay intact.
@@ -379,7 +585,8 @@ async function genericProvider(
     env.UPSTREAM_PROTOCOL === 'openai' && !responses && response.status === 400 && attempt < 2;
     attempt++
   ) {
-    const error = (await response.clone().text()).slice(0, 4000)
+    const error = await providerText(response)
+    response = new Response(error, { status: response.status, headers: response.headers })
     if (!/unsupported|unrecognized|unknown|not supported|not allowed/i.test(error)) {
       break
     }
@@ -514,7 +721,9 @@ async function* openAIReply(body: ChatRequest, env: Env, signal: AbortSignal) {
   if (enabled && !env.TAVILY_API_KEY) {
     throw new HttpError(422, 'Configure TAVILY_API_KEY to enable web search')
   }
-  const mcp = await connectMcpTools(env, signal)
+  const mcp = resolveModelCapabilities(env).tools
+    ? await connectMcpTools(env, signal)
+    : { tools: [], failures: [], close: async () => {} }
   try {
     const state = { index: -1 }
     const runtime = new ToolRuntime(mcp.tools, env, enabled, state, new Map())
@@ -552,6 +761,12 @@ async function* openAIReply(body: ChatRequest, env: Env, signal: AbortSignal) {
           : {},
         final ? runtime.finishInstructions : runtime.turnInstructions
       )
+      if (env.contextTrace?.report) {
+        yield { type: 'context_report', report: env.contextTrace.report }
+        if (env.contextTrace.memory) {
+          yield { type: 'branch_memory', memory: env.contextTrace.memory }
+        }
+      }
       const result = yield* completionEvents(response, signal, state)
       if (result.usage && hasOpenAIUsage(result.usage)) {
         const usage = openAIUsage(result.usage)
@@ -626,10 +841,11 @@ async function* openAIReply(body: ChatRequest, env: Env, signal: AbortSignal) {
 }
 
 async function generateTitle(
-  body: { question?: unknown; answer?: unknown },
+  body: { question?: unknown; answer?: unknown; model?: unknown },
   env: Env,
   signal: AbortSignal
 ) {
+  env = selectModel(env, body.model)
   if (typeof body.question !== 'string' || typeof body.answer !== 'string') {
     throw new HttpError(400, 'Question and answer are required')
   }
@@ -654,7 +870,7 @@ async function generateTitle(
       ? { stream: false, stream_options: undefined, max_completion_tokens: 512 }
       : { stream: false, max_tokens: 128 }
   )
-  const data = (await response.json()) as {
+  const data = JSON.parse(await providerText(response)) as {
     choices?: { message?: { content?: unknown } }[]
     content?: { type: string; text?: string }[]
     output?: { type: string; content?: { type: string; text?: string }[] }[]
@@ -688,7 +904,9 @@ async function generateTitle(
 
 /** Native Anthropic tool exchanges stay intact, including signed thinking blocks. */
 export async function* anthropicReply(body: ChatRequest, env: Env, signal: AbortSignal) {
-  const mcp = await connectMcpTools(env, signal)
+  const mcp = resolveModelCapabilities(env).tools
+    ? await connectMcpTools(env, signal)
+    : { tools: [], failures: [], close: async () => {} }
   try {
     const converted = await messages(body, env)
     const state = { index: -1 }
@@ -731,64 +949,13 @@ export async function* anthropicReply(body: ChatRequest, env: Env, signal: Abort
       if (!response.body || !response.headers.get('Content-Type')?.includes('text/event-stream')) {
         throw new HttpError(502, 'The provider did not return an SSE stream')
       }
-      const blocks = new Map<number, Block>()
-      const inputs = new Map<number, string>()
-      const visible = new Map<number, number>()
-      const usage: Record<string, number> = {}
-      let stop = ''
-      let ended = false
-      for await (const raw of readServerSentEvents(response.body, signal)) {
-        const event = JSON.parse(raw.data)
-        if (event.type === 'error') {
-          throw new HttpError(502, event.error?.message ?? 'Provider stream error')
-        }
-        if (event.type === 'message_start') {
-          Object.assign(usage, event.message?.usage ?? {})
-          continue
-        }
-        if (event.type === 'content_block_start') {
-          blocks.set(event.index, { ...event.content_block })
-          if (['text', 'thinking'].includes(event.content_block.type)) {
-            visible.set(event.index, ++state.index)
-            yield { ...event, index: state.index }
-          }
-        } else if (event.type === 'content_block_delta') {
-          const block = blocks.get(event.index)
-          if (block) {
-            if (event.delta.type === 'input_json_delta') {
-              if (typeof event.delta.partial_json !== 'string') {
-                throw new HttpError(502, 'Invalid tool argument delta')
-              }
-              const input = (inputs.get(event.index) ?? '') + event.delta.partial_json
-              if (input.length > 16000) {
-                throw new HttpError(502, 'Tool arguments exceed the allowed size')
-              }
-              inputs.set(event.index, input)
-            } else if (event.delta.type === 'text_delta') {
-              block.text = (block.text ?? '') + event.delta.text
-            } else if (event.delta.type === 'thinking_delta') {
-              block.thinking = String(block.thinking ?? '') + event.delta.thinking
-            } else if (event.delta.type === 'signature_delta') {
-              block.signature = String(block.signature ?? '') + event.delta.signature
-            }
-          }
-          if (visible.has(event.index)) {
-            yield { ...event, index: visible.get(event.index) }
-          }
-        } else if (event.type === 'content_block_stop') {
-          if (visible.has(event.index)) {
-            yield { ...event, index: visible.get(event.index) }
-          }
-        } else if (event.type === 'message_delta') {
-          stop = event.delta.stop_reason ?? stop
-          Object.assign(usage, event.usage ?? {})
-        } else if (event.type === 'message_stop') {
-          ended = true
+      if (env.contextTrace?.report) {
+        yield { type: 'context_report', report: env.contextTrace.report }
+        if (env.contextTrace.memory) {
+          yield { type: 'branch_memory', memory: env.contextTrace.memory }
         }
       }
-      if (!ended || !stop) {
-        throw new HttpError(502, 'Upstream stream ended before completion')
-      }
+      const { blocks, inputs, usage, stop } = yield* consumeAnthropic(response.body, signal, state)
       if (Object.keys(usage).length) {
         hasUsage = true
         for (const key of [
@@ -852,6 +1019,9 @@ export async function upstream(request: Request, env: Env, path: string): Promis
     return generateTitle(await readJsonObject(request), env, request.signal)
   }
   if (path === '/api/models' && request.method === 'GET') {
+    const configuredModels = [
+      ...new Set([env.UPSTREAM_MODEL, ...Object.keys(modelCatalog(env).profiles)]),
+    ]
     try {
       const response = await check(
         await fetch(`${base(env)}/models`, {
@@ -862,7 +1032,7 @@ export async function upstream(request: Request, env: Env, path: string): Promis
       )
       const value = (await response.json()) as { data?: { id?: unknown }[] }
       const ids = [
-        env.UPSTREAM_MODEL,
+        ...configuredModels,
         ...(Array.isArray(value.data)
           ? value.data
               .map((model) => model.id)
@@ -874,18 +1044,32 @@ export async function upstream(request: Request, env: Env, path: string): Promis
       return json({ data: [...new Set(ids)].slice(0, 500).map((id) => ({ id })) })
     } catch {
       return json({
-        data: [{ id: env.UPSTREAM_MODEL }],
+        data: configuredModels.map((id) => ({ id })),
         warning: 'Model discovery is unavailable. You can add model IDs manually.',
       })
     }
   }
   if (path === '/api/anthropic/v1/files' && request.method === 'POST') {
-    const form = await request.formData()
+    const body = await readBody(
+      request,
+      deepseek ? bodyLimits.attachment + 64 * 1024 : bodyLimits.multipart
+    )
+    let form: FormData
+    try {
+      form = await new Response(body, {
+        headers: { 'Content-Type': request.headers.get('Content-Type') ?? '' },
+      }).formData()
+    } catch {
+      throw new HttpError(400, 'Invalid multipart body')
+    }
     const file = form.get('file')
-    if (!(file instanceof File)) {
+    if (!(file instanceof File) || form.getAll('file').length !== 1) {
       throw new HttpError(400, 'A file is required')
     }
     if (deepseek) {
+      if (file.size > bodyLimits.attachment) {
+        throw new HttpError(413, 'Attachment exceeds 64 MiB')
+      }
       const h = headers(env, false)
       h.set('anthropic-beta', 'files-api-2025-04-14')
       return check(
@@ -899,6 +1083,9 @@ export async function upstream(request: Request, env: Env, path: string): Promis
       )
     }
     const image = file.type.startsWith('image/')
+    if (image && file.size > bodyLimits.image) {
+      throw new HttpError(413, 'Image exceeds 8 MiB')
+    }
     if (image && !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(file.type)) {
       throw new HttpError(422, 'This provider supports PNG, JPEG, GIF and WebP images')
     }
@@ -924,10 +1111,11 @@ export async function upstream(request: Request, env: Env, path: string): Promis
     })
   }
   if (path === '/api/anthropic/v1/messages' && request.method === 'POST') {
-    const body = (await readJsonObject(request)) as ChatRequest
+    const body = (await readJsonObject(request, bodyLimits.chat)) as ChatRequest
     if (
       (body.system !== undefined && typeof body.system !== 'string') ||
       !Array.isArray(body.messages) ||
+      body.messages.length > 2000 ||
       body.messages.some(
         (message) =>
           !message ||
@@ -945,26 +1133,84 @@ export async function upstream(request: Request, env: Env, path: string): Promis
       throw new HttpError(400, 'Messages are required')
     }
     body.system ??= ''
-    if (body.model !== undefined) {
-      if (
-        typeof body.model !== 'string' ||
-        !/^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]{0,199}$/.test(body.model)
-      ) {
-        throw new HttpError(400, 'Invalid model ID')
-      }
-      env = { ...env, UPSTREAM_MODEL: body.model }
+    env = selectModel(env, body.model)
+    if (
+      body.operationRequestId !== undefined &&
+      (typeof body.operationRequestId !== 'string' ||
+        !/^[a-zA-Z0-9_-]{1,160}$/.test(body.operationRequestId))
+    ) {
+      throw new HttpError(400, 'Invalid operation request ID')
+    }
+    if (
+      body.messages.some(
+        (message) =>
+          message.contextId !== undefined &&
+          (typeof message.contextId !== 'string' ||
+            !/^[a-zA-Z0-9_-]{1,160}$/.test(message.contextId))
+      )
+    ) {
+      throw new HttpError(400, 'Invalid context message ID')
+    }
+    env.operationRequestId = body.operationRequestId as string | undefined
+    if (searchRequested(body.tools) && !resolveModelCapabilities(env).tools) {
+      throw new HttpError(422, 'Tools and web search are not enabled for this model')
     }
     if (deepseek) {
+      if (
+        !resolveModelCapabilities(env).images &&
+        body.messages.some(
+          (message) =>
+            Array.isArray(message.content) &&
+            message.content.some((block) => block.type === 'image')
+        )
+      ) {
+        throw new HttpError(422, 'Images are not enabled for this model')
+      }
       const h = headers(env)
       h.set('anthropic-beta', 'files-api-2025-04-14')
-      return check(
-        await fetch(`${base(env)}/anthropic/v1/messages`, {
-          method: 'POST',
-          headers: h,
-          body: JSON.stringify({ ...body, model: env.UPSTREAM_MODEL, stream: true }),
-          signal: request.signal,
-          redirect: 'manual',
-        })
+      const response = await check(
+        await fetchProvider(
+          `${base(env)}/anthropic/v1/messages`,
+          {
+            method: 'POST',
+            headers: h,
+            body: JSON.stringify({
+              ...body,
+              operationRequestId: undefined,
+              messages: body.messages.map((message) => {
+                const providerMessage = { ...message }
+                delete providerMessage.contextId
+                return providerMessage
+              }),
+              model: env.UPSTREAM_MODEL,
+              stream: true,
+            }),
+            signal: request.signal,
+            redirect: 'manual',
+          },
+          env
+        )
+      )
+      if (!response.body || !response.headers.get('Content-Type')?.includes('text/event-stream')) {
+        await response.body?.cancel().catch(() => {})
+        throw new HttpError(502, 'The provider did not return an SSE stream')
+      }
+      const providerBody = response.body
+      return eventStream(
+        async function* (signal) {
+          for await (const raw of readServerSentEvents(providerBody, signal)) {
+            const event = JSON.parse(raw.data)
+            yield event
+            if (event.type === 'message_stop') {
+              return
+            }
+          }
+          throw new HttpError(502, 'Upstream stream ended before completion')
+        },
+        request.signal,
+        () => {
+          void providerBody.cancel().catch(() => {})
+        }
       )
     }
     if (env.UPSTREAM_PROTOCOL === 'openai') {

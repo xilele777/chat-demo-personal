@@ -24,6 +24,8 @@ import {
 } from './BranchSwitcher.js'
 import styles from './AssistantMessage.module.css'
 import { McpToolActivity } from './McpToolActivity.js'
+import { ContextDetails } from './ContextDetails.js'
+import { BranchMemoryDetails } from './BranchMemoryDetails.js'
 
 const TOP_UP_URL = 'https://platform.deepseek.com/top_up'
 
@@ -60,7 +62,13 @@ export const AssistantMessage = memo(function AssistantMessage({
   return (
     <div className={styles.message}>
       {message.mcpTools?.length ? (
-        <McpToolActivity tools={message.mcpTools} streaming={streaming} />
+        <McpToolActivity tools={message.mcpTools} streaming={streaming} sessionId={sessionId} />
+      ) : null}
+      {message.contextReports?.length ? (
+        <ContextDetails reports={message.contextReports} sessionId={sessionId} />
+      ) : null}
+      {message.branchMemory ? (
+        <BranchMemoryDetails memory={message.branchMemory} sessionId={sessionId} />
       ) : null}
       {refused ? null : (
         <ReplyArea

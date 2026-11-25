@@ -1,6 +1,32 @@
 import type { zh } from './zh.js'
 
 export const en = {
+  branchMemoryTitle: 'Branch memory (verbatim excerpts)',
+  branchMemoryHelp:
+    'This answer used bounded quotes from omitted history. User constraints and assistant claims retain source identities. Claims and tool evidence need verification; old approvals grant no new authority.',
+  branchMemoryInvalid:
+    'Sources are being checked or the branch/content changed. This memory cannot be reused; the next answer extracts from the current branch again.',
+  branchMemoryBudget:
+    '{sources} source messages, {missing} not fully retained, about {tokens} input tokens; extra model requests: 0. Attachment originals are excluded. Consult original messages or read tools for missing evidence.',
+  branchMemoryUser: 'User constraint source: {id}',
+  branchMemoryAssistant: 'Assistant/tool claim source (not reverified): {id}',
+  branchMemoryTruncated: ' [incomplete excerpt]',
+  mcpTrustHelp:
+    'Every tool requires confirmation by default. Only reads you explicitly trust run automatically and concurrently; remote read-only hints grant no permission. Configuration or authorization changes revoke pending requests. Dispatched operations cannot be recalled.',
+  mcpTrustRead: 'Trust {name} for automatic reads',
+  replyCheckpointFailed:
+    'Generation ended because the local recovery record could not be saved. Check browser storage before retrying; verify any dispatched tool actions first.',
+  replyGenerationTimeout:
+    'Generation ended after a response or progress timeout. Retry the answer; verify any dispatched tool actions first.',
+  mcpUnknown: 'Outcome unknown; verify before retrying',
+  mcpCheckRecord: 'Check server operation record',
+  contextSummary: 'Context: {retained} rounds retained, {omitted} omitted',
+  contextExplanation:
+    'Round numbers refer to the current branch sent in this request. Full omitted history is unavailable; branch memory provides only the listed excerpts. Budgets are estimates. Read again to verify tool evidence when needed.',
+  contextRange:
+    'Retained rounds {first}–{last}; estimated input {estimated} / {input} tokens, reserved output {output}, model window {window}.',
+  contextUnknown: 'unknown',
+  contextStartQuestion: 'Retained history starts at this question: {question}',
   returnHome: 'Return to new chat',
   multiSelect: 'Select conversations',
   selectedChats: '{count} conversations selected',
@@ -253,6 +279,17 @@ export const en = {
   messageThinkDuration: 'Thought for {count} second',
   messageProcessingDuration: 'Processed in {count} seconds',
   modelTokenBudgets: 'Input budget: {input} tokens · Output per request: {output} tokens',
+  modelContextUnknown: 'The context window is unverified; configured budgets are being used.',
+  modelContextWindow: 'Configured context window: {tokens} tokens (input and output)',
+  modelConfiguredCapabilities:
+    'Configured capabilities: Images {images} · Tools and web search {tools}',
+  modelEnabled: 'enabled',
+  modelDisabled: 'disabled',
+  modelFallback: 'This model has no capability profile. Using text mode with smaller budgets.',
+  modelImagesUnavailable:
+    'Images are not enabled for this model. Choose a model with image support.',
+  uploadGenericUnsupported:
+    'This API supports images and text/code files. PDF, Office and ebooks require a parsing service.',
   modelTokenBudgetsHelp:
     'Input includes conversation, attachments and tools. Output includes model reasoning. Actual context capacity depends on the selected model and API provider.',
   messageThinkDurationPlural: 'Thought for {count} seconds',
@@ -266,6 +303,8 @@ export const en = {
   backupNewerVersion: 'This file uses a newer version. Please update the app before importing.',
   backupInvalidVersion: 'The file version is invalid and cannot be imported.',
   backupIncomplete: 'The file is incomplete and cannot be imported.',
+  backupCapacity:
+    'Backup capacity exceeded: 16 MiB per conversation/index JSON, 64 MiB per original and 2 GiB unpacked total. Old history is preserved. Split the backup and retry.',
   backupInvalidBranches: 'The message branches in this file are corrupted and cannot be imported.',
   backupInvalidFiles: 'The attachment data in this file is corrupted and cannot be imported.',
   settingsLocalePreference: 'Language',
@@ -324,7 +363,7 @@ export const en = {
   search: 'Search',
   uploadFile: 'Upload files',
   uploadGenericTooltip:
-    'Supports images and text/code files (text up to 2 MiB). PDF and Office documents are not supported yet.',
+    'Supports images up to 8 MiB and text/code files up to 2 MiB. PDF and Office documents are not supported yet.',
   chatInputStopButtonTooltip: 'Stop',
   uploadMaxMBSize: 'File exceeds the size limit ({size} MB). Please adjust and try again.',
   uploadMaxFiles: 'You can upload up to {count} files',

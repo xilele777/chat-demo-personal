@@ -1,0 +1,16 @@
+.details {
+  margin: 12px 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.details summary {
+  cursor: pointer;
+}
+.details p {
+  margin: 8px 0;
+}
+.details ol {
+  padding-left: 24px;
+}

@@ -26,6 +26,8 @@
     "UPSTREAM_MODEL": "gpt-6.2-sol",
     "MAX_OUTPUT_TOKENS": "32768",
     "MAX_INPUT_TOKENS": "196608",
+    "OBSERVABILITY": "true",
+    "MODEL_PROFILES": "{\"gpt-6.2-sol\":{\"contextTokens\":null,\"maxInputTokens\":196608,\"maxOutputTokens\":32768,\"images\":true,\"tools\":true,\"reasoningEfforts\":[\"low\",\"medium\",\"high\"],\"apiStyle\":\"responses\"}}",
   },
-  "observability": { "enabled": false },
+  "observability": { "enabled": true },
 }

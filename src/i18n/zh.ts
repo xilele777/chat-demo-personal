@@ -1,4 +1,30 @@
 export const zh = {
+  branchMemoryTitle: '分支记忆（原文摘录）',
+  branchMemoryHelp:
+    '本次回答使用了被裁剪历史的有限原文摘录。用户约束与回答主张保留来源，回答和工具记录仍需核验；旧审批不构成新授权。',
+  branchMemoryInvalid:
+    '来源正在核验，或分支/内容已经改变。此记忆不能复用；下次回答会从当前分支原文重新提取。',
+  branchMemoryBudget:
+    '覆盖 {sources} 条消息，{missing} 条未完整保留，约 {tokens} 输入 tokens；额外模型请求：0。附件原件未进入摘录，缺失信息请查看原消息或重新读取核验。',
+  branchMemoryUser: '用户约束来源：{id}',
+  branchMemoryAssistant: '回答/工具证据来源（未经重新核验）：{id}',
+  branchMemoryTruncated: '［摘录不完整］',
+  mcpTrustHelp:
+    '所有工具默认逐次确认。只有你明确信任的读取工具可自动执行并发读取；服务的只读声明仅作提示。配置或认证变化会撤销进行中请求的权限，已派发的操作无法撤回。',
+  mcpTrustRead: '信任 {name}，允许自动读取',
+  replyCheckpointFailed:
+    '本地恢复记录未能保存，生成已结束。请检查浏览器存储后重试；已派发的工具操作请先核验结果。',
+  replyGenerationTimeout:
+    '等待响应或流中长时间无进展，生成已结束。请重试；已派发的工具操作请先核验结果。',
+  mcpUnknown: '结果未知，请核验后再操作',
+  mcpCheckRecord: '核验服务端操作记录',
+  contextSummary: '本次上下文：保留 {retained} 轮，省略 {omitted} 轮',
+  contextExplanation:
+    '范围以本次发送的当前分支轮次编号为准。省略的完整历史不可用于本次回答；有分支记忆时仅可使用列出的摘录。预算是估算值，工具证据需要时应重新读取核验。',
+  contextRange:
+    '保留第 {first}–{last} 轮；估算输入 {estimated} / {input} tokens，预留输出 {output}，模型窗口 {window}。',
+  contextUnknown: '未知',
+  contextStartQuestion: '本次保留历史从此问题开始：{question}',
   returnHome: '返回新对话',
   multiSelect: '多选对话',
   selectedChats: '已选择 {count} 个对话',
@@ -237,6 +263,14 @@ export const zh = {
   messageThinkDuration: '已思考（用时 {count} 秒）',
   messageProcessingDuration: '处理用时 {count} 秒',
   modelTokenBudgets: '输入预算 {input} Token · 单次输出上限 {output} Token',
+  modelContextUnknown: '上下文窗口尚未验证；当前使用配置的预算。',
+  modelContextWindow: '配置的上下文窗口：{tokens} Token（包含输入与输出）',
+  modelConfiguredCapabilities: '配置能力：图片 {images} · 工具与联网搜索 {tools}',
+  modelEnabled: '已启用',
+  modelDisabled: '未启用',
+  modelFallback: '此模型尚未配置能力，暂用较小预算的文本模式。',
+  modelImagesUnavailable: '此模型未启用图片能力，请切换支持图片的模型。',
+  uploadGenericUnsupported: '当前接口支持图片和文本/代码文件，PDF、Office 和电子书需要解析服务。',
   modelTokenBudgetsHelp:
     '输入预算包含对话、附件和工具；输出上限包含模型思考。实际上下文容量由当前模型和 API 服务决定。',
   messageThinkDurationPlural: '已思考（用时 {count} 秒）',
@@ -249,6 +283,8 @@ export const zh = {
   backupNewerVersion: '文件版本过新，请升级后再导入',
   backupInvalidVersion: '文件版本无效，无法导入',
   backupIncomplete: '文件内容不完整，无法导入',
+  backupCapacity:
+    '备份超过容量范围：单份会话/索引 JSON 16 MiB、单个原件 64 MiB、解压总量 2 GiB。原历史保持不变，请拆分备份后重试。',
   backupInvalidBranches: '文件中的消息分支已损坏，无法导入',
   backupInvalidFiles: '文件中的附件数据已损坏，无法导入',
   settingsLocalePreference: '语言',
@@ -305,7 +341,7 @@ export const zh = {
   search: '智能搜索',
   uploadFile: '上传文件',
   uploadGenericTooltip:
-    '目前支持上传图片和文本/代码文件（文本最大 2 MiB），暂不支持 PDF 和 Office 文档',
+    '支持图片（最大 8 MiB）和文本/代码文件（最大 2 MiB），暂不支持 PDF 和 Office 文档',
   chatInputStopButtonTooltip: '停止生成',
   uploadMaxMBSize: '单个文件大小超过限制（{size}MB），请调整后重试',
   uploadMaxFiles: '上传文件最多支持 {count} 个',

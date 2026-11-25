@@ -4,22 +4,33 @@ import type { McpToolBlock } from '../../services/mcpTypes.js'
 import { cloudFetch, cloudJson } from '../../services/cloud.js'
 import { Button } from '../base/Button.js'
 import styles from './McpToolActivity.module.css'
+import { refreshToolOperations } from '../../services/chat/store.js'
 
 export const McpToolActivity = ({
   tools,
   streaming,
+  sessionId,
 }: {
   tools: McpToolBlock[]
   streaming: boolean
+  sessionId: string
 }) => (
   <div className={styles.list}>
     {tools.map((tool) => (
-      <Tool key={tool.id} tool={tool} streaming={streaming} />
+      <Tool key={tool.id} tool={tool} streaming={streaming} sessionId={sessionId} />
     ))}
   </div>
 )
 
-const Tool = ({ tool, streaming }: { tool: McpToolBlock; streaming: boolean }) => {
+const Tool = ({
+  tool,
+  streaming,
+  sessionId,
+}: {
+  tool: McpToolBlock
+  streaming: boolean
+  sessionId: string
+}) => {
   const t = useTranslate()
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
@@ -27,17 +38,19 @@ const Tool = ({ tool, streaming }: { tool: McpToolBlock; streaming: boolean }) =
   const interrupted = !streaming && (tool.status === 'approval' || tool.status === 'running')
   const status = interrupted
     ? t('mcpInterrupted')
-    : t(
-        tool.status === 'approval'
-          ? 'mcpApproval'
-          : tool.status === 'running'
-            ? 'mcpRunning'
-            : tool.status === 'done'
-              ? 'mcpDone'
-              : tool.status === 'denied'
-                ? 'mcpDenied'
-                : 'mcpError'
-      )
+    : tool.status === 'unknown'
+      ? t('mcpUnknown')
+      : t(
+          tool.status === 'approval'
+            ? 'mcpApproval'
+            : tool.status === 'running'
+              ? 'mcpRunning'
+              : tool.status === 'done'
+                ? 'mcpDone'
+                : tool.status === 'denied'
+                  ? 'mcpDenied'
+                  : 'mcpError'
+        )
   const decide = async (approved: boolean) => {
     setSending(true)
     setError('')
@@ -85,6 +98,24 @@ const Tool = ({ tool, streaming }: { tool: McpToolBlock; streaming: boolean }) =
         </div>
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
+      {!streaming && (interrupted || tool.status === 'unknown') ? (
+        <Button
+          size="s"
+          variant="outlined"
+          disabled={sending}
+          onClick={() => {
+            setSending(true)
+            setError('')
+            void refreshToolOperations(sessionId)
+              .catch((error: unknown) =>
+                setError(error instanceof Error ? error.message : String(error))
+              )
+              .finally(() => setSending(false))
+          }}
+        >
+          {t('mcpCheckRecord')}
+        </Button>
+      ) : null}
     </section>
   )
 }

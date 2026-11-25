@@ -202,6 +202,7 @@ export const McpSettings = () => {
               authType: 'bearer',
               tools: [],
               disabledTools: [],
+              trustedReadTools: [],
             })
           }
         >
@@ -243,7 +244,7 @@ const McpEditor = ({
     try {
       const response = await cloudFetch(
         `/mcp/servers/${value.id}${test ? '/test' : ''}`,
-        cloudJson(test ? 'POST' : 'PUT', value)
+        cloudJson(test ? 'POST' : 'PUT', { ...value, refreshTools: tested })
       )
       const data = (await response.json()) as { server: McpServer }
       if (test) {
@@ -360,33 +361,56 @@ const McpEditor = ({
         {t('mcpEnableConnection')}
       </label>
       {value.tools.length ? (
-        <fieldset className={styles.tools}>
-          <legend>{t('mcpTools')}</legend>
-          {value.tools.map((tool) => (
-            <label key={tool.name} className={styles.check}>
-              <input
-                name="tools"
-                type="checkbox"
-                value={tool.name}
-                checked={!value.disabledTools.includes(tool.name)}
-                onChange={(event) =>
-                  update({
-                    disabledTools: event.target.checked
-                      ? value.disabledTools.filter((name) => name !== tool.name)
-                      : [...value.disabledTools, tool.name],
-                  })
-                }
-              />
-              <span>
-                {tool.name}
-                <span className={styles.toolDescription}>
-                  {t(tool.readOnly ? 'mcpReadOnly' : 'mcpNeedsApproval')}
-                  {tool.description ? ` · ${tool.description.slice(0, 150)}` : ''}
-                </span>
-              </span>
-            </label>
-          ))}
-        </fieldset>
+        <>
+          <p className={styles.description}>{t('mcpTrustHelp')}</p>
+          <fieldset className={styles.tools}>
+            <legend>{t('mcpTools')}</legend>
+            {value.tools.map((tool) => (
+              <div key={tool.name}>
+                <label className={styles.check}>
+                  <input
+                    name="tools"
+                    type="checkbox"
+                    value={tool.name}
+                    checked={!value.disabledTools.includes(tool.name)}
+                    onChange={(event) =>
+                      update({
+                        disabledTools: event.target.checked
+                          ? value.disabledTools.filter((name) => name !== tool.name)
+                          : [...value.disabledTools, tool.name],
+                      })
+                    }
+                  />
+                  <span>
+                    {tool.name}
+                    <span className={styles.toolDescription}>
+                      {t(tool.readOnly ? 'mcpReadOnly' : 'mcpNeedsApproval')}
+                      {tool.description ? ` · ${tool.description.slice(0, 150)}` : ''}
+                    </span>
+                  </span>
+                </label>
+                {tool.readOnly ? (
+                  <label className={styles.check}>
+                    <input
+                      type="checkbox"
+                      name="trustedReadTools"
+                      value={tool.name}
+                      checked={value.trustedReadTools?.includes(tool.name) ?? false}
+                      onChange={(event) =>
+                        update({
+                          trustedReadTools: event.target.checked
+                            ? [...(value.trustedReadTools ?? []), tool.name]
+                            : (value.trustedReadTools ?? []).filter((name) => name !== tool.name),
+                        })
+                      }
+                    />
+                    {t('mcpTrustRead', { name: tool.name })}
+                  </label>
+                ) : null}
+              </div>
+            ))}
+          </fieldset>
+        </>
       ) : null}
       {error ? (
         <p role="alert" className={styles.error}>
