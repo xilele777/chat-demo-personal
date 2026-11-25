@@ -1,0 +1,103 @@
+{
+  "date": "2026-11-25",
+  "runtime": "local workerd V8 via Runtime.getHeapUsage, 50 ms sampling; not production or total process RSS",
+  "baseline": {
+    "usedSize": 13148132,
+    "totalSize": 16146432,
+    "embedderHeapUsedSize": 3095080,
+    "backingStorageSize": 873222
+  },
+  "sessions": 269,
+  "largeSessions": 48,
+  "historyBytes": 64912316,
+  "answerBranches": 4001,
+  "attachmentBytes": 67108864,
+  "concurrentSearches": 4,
+  "concurrentToolResults": 4,
+  "resultBytesEach": 1843200,
+  "timings": {
+    "importMs": 22478,
+    "searchMs": 510,
+    "backupBytes": 131935340
+  },
+  "browserMemory": {
+    "baseline": {
+      "usedSize": 14015640,
+      "totalSize": 25579520,
+      "embedderHeapUsedSize": 8244296,
+      "backingStorageSize": 3639374
+    },
+    "sampledPeakUsedHeapBytes": 80834912,
+    "sampledPeakExternalBytes": 55538294,
+    "samples": 90
+  },
+  "peaks": {
+    "baseline": {
+      "sampledPeakUsedHeapBytes": 14199472,
+      "sampledPeakTotalHeapBytes": 16896000,
+      "sampledPeakExternalBytes": 876750,
+      "samples": 2
+    },
+    "failure-recovery": {
+      "sampledPeakUsedHeapBytes": 18078928,
+      "sampledPeakTotalHeapBytes": 21442560,
+      "sampledPeakExternalBytes": 5052361,
+      "samples": 2
+    },
+    "staged-import": {
+      "sampledPeakUsedHeapBytes": 42698028,
+      "sampledPeakTotalHeapBytes": 45309952,
+      "sampledPeakExternalBytes": 35467902,
+      "samples": 269
+    },
+    "atomic-commit": {
+      "sampledPeakUsedHeapBytes": 42730456,
+      "sampledPeakTotalHeapBytes": 45309952,
+      "sampledPeakExternalBytes": 33422499,
+      "samples": 1
+    },
+    "paged-index": {
+      "sampledPeakUsedHeapBytes": 42976020,
+      "sampledPeakTotalHeapBytes": 45572096,
+      "sampledPeakExternalBytes": 33423675,
+      "samples": 2
+    },
+    "four-concurrent-searches": {
+      "sampledPeakUsedHeapBytes": 71338396,
+      "sampledPeakTotalHeapBytes": 74874880,
+      "sampledPeakExternalBytes": 17135047,
+      "samples": 2
+    },
+    "64-MiB-upload": {
+      "sampledPeakUsedHeapBytes": 71364012,
+      "sampledPeakTotalHeapBytes": 74874880,
+      "sampledPeakExternalBytes": 32052003,
+      "samples": 14
+    },
+    "four-concurrent-tool-results": {
+      "sampledPeakUsedHeapBytes": 28931292,
+      "sampledPeakTotalHeapBytes": 74153984,
+      "sampledPeakExternalBytes": 12934072,
+      "samples": 3
+    },
+    "backup": {
+      "sampledPeakUsedHeapBytes": 29052208,
+      "sampledPeakTotalHeapBytes": 74153984,
+      "sampledPeakExternalBytes": 5616316,
+      "samples": 4
+    },
+    "browser-backup-import": {
+      "sampledPeakUsedHeapBytes": 55444896,
+      "sampledPeakTotalHeapBytes": 99241984,
+      "sampledPeakExternalBytes": 42225801,
+      "samples": 149
+    },
+    "restore-old-history": {
+      "sampledPeakUsedHeapBytes": 38696876,
+      "sampledPeakTotalHeapBytes": 93413376,
+      "sampledPeakExternalBytes": 28177159,
+      "samples": 2
+    }
+  },
+  "recovery": "oversized/incomplete staging preserved old history; cancelled staging retried; backup roundtrip and corrupt ZIP rejected; original cloud history restored"
+}

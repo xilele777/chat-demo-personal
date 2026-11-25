@@ -7,11 +7,13 @@ A web chat tool that connects to your own API. Use your preferred model service 
 ## Features
 
 - Streaming replies with a stop button; edit questions, regenerate answers, and switch between message branches.
+- Response and stream progress deadlines end stalled generation. Standard cloud model replies show retained/omitted history ranges and estimated budgets. Tool status is saved independently; server dispatch/completion records support recovery without replaying writes with unknown outcomes.
+- Standard cloud replies retain bounded, source-bound quotes from omitted branch history. Edits and version changes trigger source verification, and backups preserve the records. No extra summary model calls are made; missing facts require original messages or read verification.
 - Automatic conversation titles, manual renaming, pinning, and deletion.
 - Search titles and message text from the sidebar icon or Ctrl/Cmd+K; results reveal and focus messages in any branch.
 - Text drafts survive refresh and reopening on the same device; cloud and local drafts are separate.
 - Switch models beside Web search in the composer; discover available IDs or add them in Settings. Below the composer, click conversation token totals and cache hit rate to expand input, output, cache reads/writes, reasoning and reported-answer counts. Missing metrics are marked as not reported.
-- Remote MCP connections in Settings: Streamable HTTP, optional Bearer tokens or OAuth browser sign-in (including official Notion MCP), automatic cloud token refresh, tool selection, connection testing, and approval before non-read tool calls. Available with OpenAI- and Anthropic-compatible providers.
+- Remote MCP connections in Settings: Streamable HTTP, optional Bearer tokens or OAuth browser sign-in (including official Notion MCP), automatic cloud token refresh, tool selection and connection testing. Every tool requires approval by default; explicitly trusted reads may run automatically. Configuration changes prevent old requests from dispatching more calls. Available with OpenAI- and Anthropic-compatible providers.
 - Upload, paste, or drag in images and text/code files; preview images in the page and download originals.
 - Optional web search with visible progress, sources, and citations. In OpenAI-compatible mode, the model decides whether to search based on the conversation.
 - Configurable reasoning effort for supported models; display reasoning text actually returned by the API.
@@ -41,7 +43,9 @@ Cloud mode configures the protocol, base URL, and model in `wrangler.jsonc`, wit
 - **Anthropic-compatible:** streaming Messages, images, and text/code attachments, with optional search before generating an answer.
 - **DeepSeek extensions:** the original search, link reading, file, and speech features, where supported by the upstream service.
 
-OpenAI / Anthropic modes can use [Tavily](https://tavily.com/) for web search. Standard modes support PNG, JPEG, GIF, WebP, and text/code attachments up to 2 MiB. PDF, Office, and ebook parsing are not implemented. Speech requires the DeepSeek extension APIs. Attachments may need to be added again after switching providers.
+OpenAI / Anthropic modes can use [Tavily](https://tavily.com/) for web search. Standard modes support PNG, JPEG, GIF and WebP images up to 8 MiB, and text/code attachments up to 2 MiB. PDF, Office, and ebook parsing are not implemented. Speech requires the DeepSeek extension APIs. Attachments may need to be added again after switching providers.
+
+Cloud mode uses `MODEL_PROFILES` to configure each model's context window, input/output budgets, images, tools and reasoning efforts. Settings follow the selected model and clearly show unknown windows. Unconfigured additional models use text mode with smaller budgets. See the [deployment guide](DEPLOY.cloudflare.zh-CN.md#模型切换思考与-mcp). ZIP imports stage individual conversations before an atomic replacement; failed or oversized imports preserve existing history. The deployment guide records capacity and recovery limits.
 
 See the [deployment guide](DEPLOY.cloudflare.zh-CN.md) for configuration and compatibility details.
 
@@ -113,3 +117,6 @@ The frontend uses React and TypeScript. The cloud backend uses Cloudflare Worker
 ## Credits and license
 
 Independently maintained from [DeepSeek chat-demo](https://github.com/deepseek-ai/chat-demo), with personal cloud deployment, custom API support, and chat experience improvements. Licensed under [MIT](LICENSE); retain the license when distributing the app. Third-party dependencies have their own licenses.
+
+
+This batch adds expiring MCP metadata with selected-service connections, paged history and bounded search, staged atomic imports, cross-tab coordination, recovery object pins and manual cleanup previews. New checks: `test:mcp-cache`, `test:object-lifecycle`, `test:capacity`, `test:coordination-ui`, and `test:disaster-recovery`. See the deployment guide for capacity limits and the full local D1/R2 restore drill; these do not certify production limits.
