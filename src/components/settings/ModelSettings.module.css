@@ -13,6 +13,14 @@
   line-height: 1.6;
   color: var(--dsw-alias-label-tertiary);
 }
+.description summary {
+  inline-size: fit-content;
+  cursor: pointer;
+}
+.description summary:focus-visible {
+  outline: 2px solid var(--dsw-alias-button-primary-fill);
+  outline-offset: 2px;
+}
 .selection {
   display: flex;
   align-items: center;

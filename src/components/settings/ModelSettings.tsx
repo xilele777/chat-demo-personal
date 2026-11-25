@@ -42,7 +42,8 @@ export const ModelSettings = () => {
         />
       </div>
       {budgets ? (
-        <div className={styles.description} role="status" aria-live="polite">
+        <details key={selected} className={styles.description} data-model-details>
+          <summary>{t('modelDetails')}</summary>
           <p>
             {t('modelTokenBudgets', {
               input: budgets.input.toLocaleString(),
@@ -65,10 +66,14 @@ export const ModelSettings = () => {
                   tools: t(capabilities.tools ? 'modelEnabled' : 'modelDisabled'),
                 })}
               </p>
-              {capabilities.source === 'fallback' ? <p>{t('modelFallback')}</p> : null}
             </>
           ) : null}
-        </div>
+        </details>
+      ) : null}
+      {capabilities?.source === 'fallback' ? (
+        <p className={styles.description} role="status">
+          {t('modelFallback')}
+        </p>
       ) : null}
       <Button variant="outlined" size="m" disabled={loading} onClick={() => void loadModels()}>
         {t(loading ? 'modelsLoading' : 'modelsRefresh')}

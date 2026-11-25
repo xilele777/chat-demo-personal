@@ -265,6 +265,7 @@ export const zh = {
   messageThinkDuration: '已思考（用时 {count} 秒）',
   messageProcessingDuration: '处理用时 {count} 秒',
   modelTokenBudgets: '输入预算 {input} Token · 单次输出上限 {output} Token',
+  modelDetails: '模型配置详情',
   modelContextUnknown: '上下文窗口尚未验证；当前使用配置的预算。',
   modelContextWindow: '配置的上下文窗口：{tokens} Token（包含输入与输出）',
   modelConfiguredCapabilities: '配置能力：图片 {images} · 工具与联网搜索 {tools}',

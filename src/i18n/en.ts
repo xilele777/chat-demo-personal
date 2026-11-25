@@ -281,6 +281,7 @@ export const en = {
   messageThinkDuration: 'Thought for {count} second',
   messageProcessingDuration: 'Processed in {count} seconds',
   modelTokenBudgets: 'Input budget: {input} tokens · Output per request: {output} tokens',
+  modelDetails: 'Model configuration details',
   modelContextUnknown: 'The context window is unverified; configured budgets are being used.',
   modelContextWindow: 'Configured context window: {tokens} tokens (input and output)',
   modelConfiguredCapabilities:
