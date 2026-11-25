@@ -64,9 +64,6 @@ export const AssistantMessage = memo(function AssistantMessage({
       {message.mcpTools?.length ? (
         <McpToolActivity tools={message.mcpTools} streaming={streaming} sessionId={sessionId} />
       ) : null}
-      {message.contextReports?.length ? (
-        <ContextDetails reports={message.contextReports} sessionId={sessionId} />
-      ) : null}
       {message.branchMemory ? (
         <BranchMemoryDetails memory={message.branchMemory} sessionId={sessionId} />
       ) : null}
@@ -135,6 +132,9 @@ export const AssistantMessage = memo(function AssistantMessage({
             ) : null}
           </span>
         </div>
+      ) : null}
+      {message.contextReports?.some((report) => report.omittedRounds > 0) ? (
+        <ContextDetails reports={message.contextReports} sessionId={sessionId} />
       ) : null}
       {!streaming && !refused && view.searchResults.length > 0 ? (
         <button
