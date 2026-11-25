@@ -140,6 +140,9 @@ try {
   await recovering.getByRole('button', { name: `${aTitle} (本机副本)`, exact: true }).click()
   await expect(recovering.getByText('Original answer', { exact: true })).toBeVisible()
   await expect(recovering.getByText(/个对话尚未保存/)).toBeVisible()
+  // Unsaved also includes an in-flight pin/save. Keep failure interception until
+  // the save actually fails, otherwise fast runners may finish before Retry appears.
+  await expect(recovering.getByRole('button', { name: '重试', exact: true }).first()).toBeVisible()
   await recovering.unroute('**/api/sessions/*', failWrites)
   await recovering.getByRole('button', { name: '重试', exact: true }).first().click()
   await expect
