@@ -7,7 +7,13 @@ import styles from './TokenUsage.module.css'
 import { IconChevronDownOutline14 } from '../base/icons.js'
 
 /** One aggregate for the whole conversation, including alternate answers and continuations. */
-export const SessionTokenUsage = ({ session }: { session: Session }) => {
+export const SessionTokenUsage = ({
+  session,
+  streaming,
+}: {
+  session: Session
+  streaming: boolean
+}) => {
   const t = useTranslate()
   const ref = useRef<HTMLDetailsElement>(null)
   const answers = session.messages.filter((message) => message.role === 'assistant')
@@ -41,9 +47,22 @@ export const SessionTokenUsage = ({ session }: { session: Session }) => {
     }
   }, [session.id])
   if (!usage) {
-    return answers.some((message) => message.status === 'done') ? (
-      <span>{t('tokenUnavailable')}</span>
-    ) : null
+    return (
+      <span className={styles.usage} data-session-usage>
+        <span className={styles.summary}>
+          <span className={styles.total}>
+            <span>{t('tokenSession')}</span>
+            <strong>— tokens</strong>
+          </span>
+          <span className={styles.quick}>
+            {t('tokenInput')} <b>—</b>
+            <span>·</span>
+            {t('tokenOutput')} <b>—</b>
+          </span>
+          <span role="status">{t(streaming ? 'tokenPending' : 'tokenUnavailable')}</span>
+        </span>
+      </span>
+    )
   }
   const input = inputTokens(usage),
     output = usage.output_tokens,
@@ -78,6 +97,7 @@ export const SessionTokenUsage = ({ session }: { session: Session }) => {
         <span className={styles.cacheBadge}>
           {t('tokenCacheRate')} <b>{rateText}</b>
         </span>
+        {streaming ? <span role="status">{t('tokenUpdating')}</span> : null}
         <IconChevronDownOutline14 />
       </summary>
       <section className={styles.panel} aria-label={t('tokenUsage')}>

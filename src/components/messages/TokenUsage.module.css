@@ -20,7 +20,10 @@
 .summary::-webkit-details-marker {
   display: none;
 }
-.summary:hover {
+.usage > span.summary {
+  cursor: default;
+}
+details.usage > .summary:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 .summary:focus-visible {

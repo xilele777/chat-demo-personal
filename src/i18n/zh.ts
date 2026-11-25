@@ -82,6 +82,8 @@ export const zh = {
   tokenReasoning: '其中思考',
   tokenTotal: '合计',
   tokenUnavailable: '接口未返回 Token 用量',
+  tokenPending: '用量待返回',
+  tokenUpdating: '本轮用量统计中',
   tokenSession: '会话累计',
   mcpSection: 'MCP',
   mcpCloudOnly: 'MCP 连接在个人云端模式中可用。',

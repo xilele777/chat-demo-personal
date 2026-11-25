@@ -85,6 +85,8 @@ export const en = {
   tokenReasoning: 'Reasoning within output',
   tokenTotal: 'Total',
   tokenUnavailable: 'Provider did not return token usage',
+  tokenPending: 'Awaiting usage',
+  tokenUpdating: 'Current usage pending',
   tokenSession: 'Conversation total',
   mcpSection: 'MCP',
   mcpAuthType: 'Authentication',

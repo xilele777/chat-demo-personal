@@ -24,7 +24,7 @@ export const SessionView = ({ session, streaming }: { session: Session; streamin
           <div className={styles.inputContainer}>
             <ChatInput sessionId={session.id} />
             <div className={styles.statusRow}>
-              <SessionTokenUsage session={session} />
+              <SessionTokenUsage session={session} streaming={streaming} />
               <SaveStatus sessionId={session.id} />
             </div>
           </div>

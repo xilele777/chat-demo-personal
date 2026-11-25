@@ -74,6 +74,51 @@ try {
   await page.getByLabel('访问密码', { exact: true }).fill('local-smoke-password-only')
   await page.getByRole('button', { name: '进入个人空间', exact: true }).click()
   await expect(page.getByPlaceholder('请输入消息')).toBeVisible()
+  await page.route('**/api/anthropic/v1/messages', async (route) => {
+    requested.resolve()
+    await gate.promise
+    await route
+      .fulfill({ status: 200, contentType: 'text/event-stream', body: sse })
+      .catch(() => {})
+  })
+  await page.getByPlaceholder('请输入消息').fill('首次回复等待用量')
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  await waitRequested()
+  const usage = page.locator('[data-session-usage]')
+  await expect(usage).toContainText('用量待返回')
+  await expect(usage.locator('strong').first()).toHaveText('— tokens')
+  const composerBottom = async () =>
+    usage.evaluate((element) => {
+      const row = element.parentElement
+      const composer = row.previousElementSibling
+      const rect = composer.getBoundingClientRect()
+      return {
+        bottom: rect.bottom,
+        gap: innerHeight - rect.bottom,
+        height: row.getBoundingClientRect().height,
+      }
+    })
+  for (const width of [1366, 390]) {
+    await page.setViewportSize({ width, height: 844 })
+    await expect(usage).toBeVisible()
+    await expect.poll(async () => (await composerBottom()).gap).toBeGreaterThanOrEqual(48)
+    expect((await composerBottom()).height).toBeGreaterThanOrEqual(48)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    const screenshot = `tmp/token-footer-${id}-${width}.png`
+    await page.screenshot({ path: screenshot })
+    console.log(`Pending token layout: ${screenshot}`)
+  }
+  const pendingBottom = (await composerBottom()).bottom
+  gate.resolve()
+  await expect(usage.locator('strong').first()).toHaveText('120 tokens')
+  await expect(usage).not.toContainText('用量待返回')
+  expect(Math.abs((await composerBottom()).bottom - pendingBottom)).toBeLessThan(2)
+  await page.setViewportSize({ width: 1366, height: 844 })
+  gate = Promise.withResolvers()
+  requested = Promise.withResolvers()
+  console.log(
+    'PASS: first request keeps the token footer visible before any provider event, with stable composer spacing on desktop and mobile'
+  )
   const generation = (await (await context.request.get(`${origin}/api/sessions`)).json()).generation
   expect(
     (
@@ -106,6 +151,21 @@ try {
                 prefix: true,
                 stopReason: 'max_tokens',
                 blocks: [{ type: 'text', text: '已有回答' }],
+                contextReports: [
+                  {
+                    model: 'test-model',
+                    round: 1,
+                    totalRounds: 1,
+                    retainedRounds: 1,
+                    omittedRounds: 0,
+                    firstRetainedRound: 1,
+                    estimatedInputTokens: 100,
+                    inputBudget: 8192,
+                    outputBudget: 2048,
+                    contextWindow: null,
+                    retainedQuestionIds: ['q'],
+                  },
+                ],
                 usage: {
                   input_tokens: 100,
                   output_tokens: 50,
@@ -123,13 +183,7 @@ try {
   await page.reload()
   const total = page.locator('[data-session-usage] strong').first()
   await expect(total).toHaveText('150 tokens')
-  await page.route('**/api/anthropic/v1/messages', async (route) => {
-    requested.resolve()
-    await gate.promise
-    await route
-      .fulfill({ status: 200, contentType: 'text/event-stream', body: sse })
-      .catch(() => {})
-  })
+  await expect(page.locator('[data-context-details]')).toHaveCount(0)
   await page.getByRole('button', { name: '继续生成', exact: true }).click()
   await waitRequested()
   await page.waitForTimeout(2100)
