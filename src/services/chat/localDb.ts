@@ -203,6 +203,26 @@ export const loadStagingSessions = async (): Promise<Session[]> =>
 export const loadStagingFiles = async (): Promise<StoredFile[]> =>
   (await getDB()).getAll('filesStaging')
 
+/** Separate short transactions allow network backpressure without retaining all bodies. */
+export async function* stagingSessions(): AsyncGenerator<Session> {
+  const db = await getDB()
+  for (const key of await db.getAllKeys('sessionsStaging')) {
+    const session = await db.get('sessionsStaging', key)
+    if (session) {
+      yield session
+    }
+  }
+}
+export async function* stagingFiles(): AsyncGenerator<StoredFile> {
+  const db = await getDB()
+  for (const key of await db.getAllKeys('filesStaging')) {
+    const file = await db.get('filesStaging', key)
+    if (file) {
+      yield file
+    }
+  }
+}
+
 export const saveSession = async (session: Session, files: StoredFile[] = []): Promise<void> => {
   const summary = storedSummary(session)
   const tx = (await getDB()).transaction(['sessions', 'sessionSummaries', 'files'], 'readwrite')

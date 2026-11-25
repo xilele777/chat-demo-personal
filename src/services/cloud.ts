@@ -1,9 +1,12 @@
 import { create } from 'zustand'
 import type { ReasoningEffort } from './api/types.js'
+import type { ModelCatalog } from './modelCapabilities.js'
+import { boundedResponseText } from './api/streamLimits.js'
 
 export const cloudMode = __CLOUD_MODE__
 
 export type CloudConfig = {
+  generationTimeouts?: import('./api/streamLimits.js').GenerationTimeouts
   protocol: 'deepseek' | 'anthropic' | 'openai'
   model: string
   configured: boolean
@@ -14,6 +17,7 @@ export type CloudConfig = {
   reasoningEffortsAutomatic?: boolean
   mcp?: boolean
   tokenBudgets?: { input: number; output: number }
+  modelCatalog?: ModelCatalog
 }
 
 export const useCloud = create<{
@@ -34,33 +38,32 @@ export class CloudError extends Error {
 }
 
 export async function cloudFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const controller = new AbortController()
-  const onAbort = () => controller.abort(init.signal?.reason)
-  init.signal?.addEventListener('abort', onAbort, { once: true })
-  if (init.signal?.aborted) {
-    onAbort()
-  }
-  const timer = setTimeout(() => controller.abort(), 60_000)
-  try {
-    const response = await fetch(`/api${path}`, {
-      ...init,
-      signal: controller.signal,
-      credentials: 'same-origin',
-      redirect: 'error',
-      cache: 'no-store',
-    })
-    if (!response.ok) {
-      if (response.status === 401 && !path.startsWith('/auth')) {
-        useCloud.setState({ authRequired: true })
-      }
-      const body = await response.json().catch(() => null)
-      throw new CloudError(response.status, body?.error?.message ?? `HTTP ${response.status}`)
+  // Fetch keeps this signal attached while callers consume the response body.
+  const signal = AbortSignal.any([
+    AbortSignal.timeout(60_000),
+    ...(init.signal ? [init.signal] : []),
+  ])
+  const response = await fetch(`/api${path}`, {
+    ...init,
+    signal,
+    credentials: 'same-origin',
+    redirect: 'error',
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    if (response.status === 401 && !path.startsWith('/auth')) {
+      useCloud.setState({ authRequired: true })
     }
-    return response
-  } finally {
-    clearTimeout(timer)
-    init.signal?.removeEventListener('abort', onAbort)
+    const text = await boundedResponseText(response, 64 * 1024, signal)
+    let body: { error?: { message?: string } } | null = null
+    try {
+      body = JSON.parse(text)
+    } catch {
+      // Non-JSON errors still carry their HTTP status without unbounded buffering.
+    }
+    throw new CloudError(response.status, body?.error?.message ?? `HTTP ${response.status}`)
   }
+  return response
 }
 
 export async function loadCloudConfig(): Promise<void> {

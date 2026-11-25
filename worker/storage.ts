@@ -1,5 +1,8 @@
 import { HttpError, json, readJsonObject, readSession, validId, type Env } from './types.js'
 import { searchSession, type SearchableSession } from '../src/services/chat/search.js'
+import { bodyLimits, putAttachment } from './bodyLimits.js'
+import { historyImport } from './historyImport.js'
+import { objectLifecycle, pinObjects, unpinObjects } from './objectLifecycle.js'
 
 const conflict = () =>
   new HttpError(
@@ -8,6 +11,14 @@ const conflict = () =>
   )
 
 export async function storage(request: Request, env: Env, path: string): Promise<Response | null> {
+  const imported = await historyImport(request, env, path)
+  if (imported) {
+    return imported
+  }
+  const maintenance = await objectLifecycle(request, env, path)
+  if (maintenance) {
+    return maintenance
+  }
   if (path === '/api/history/search' && request.method === 'GET') {
     const query = new URL(request.url).searchParams.get('q')?.trim() ?? ''
     if (!query || query.length > 200) {
@@ -15,7 +26,8 @@ export async function storage(request: Request, env: Env, path: string): Promise
     }
     const pattern = `%${query.replace(/[\\%_]/g, '\\$&')}%`
     // Narrow candidates in D1; only the matching excerpts travel to the browser.
-    const rows = await env.DB.prepare(`SELECT data FROM sessions s WHERE deleted = 0 AND (
+    const candidates =
+      await env.DB.prepare(`SELECT id, length(CAST(data AS BLOB)) AS bytes FROM sessions s WHERE deleted = 0 AND (
       title LIKE ? ESCAPE '\\' OR EXISTS (
         SELECT 1 FROM json_each(s.data, '$.messages') m WHERE
         json_extract(m.value, '$.content') LIKE ? ESCAPE '\\' OR EXISTS (
@@ -24,10 +36,24 @@ export async function storage(request: Request, env: Env, path: string): Promise
         )
       )
     ) ORDER BY updated_at DESC LIMIT 100`)
-      .bind(pattern, pattern, pattern)
-      .all<{ data: string }>()
+        .bind(pattern, pattern, pattern)
+        .all<{ id: string; bytes: number }>()
     const results = []
-    for (const row of rows.results) {
+    let scannedBytes = 0
+    let scanned = 0
+    for (const candidate of candidates.results) {
+      if (scannedBytes + candidate.bytes > 8 * 1024 * 1024) {
+        break
+      }
+      request.signal.throwIfAborted()
+      const row = await env.DB.prepare('SELECT data FROM sessions WHERE id = ? AND deleted = 0 AND length(CAST(data AS BLOB)) <= ?')
+        .bind(candidate.id, 8 * 1024 * 1024 - scannedBytes)
+        .first<{ data: string }>()
+      if (!row) {
+        continue
+      }
+      scannedBytes += new TextEncoder().encode(row.data).length
+      scanned++
       results.push(
         ...searchSession(JSON.parse(row.data) as SearchableSession, query, 50 - results.length)
       )
@@ -35,17 +61,32 @@ export async function storage(request: Request, env: Env, path: string): Promise
         break
       }
     }
-    return json({ results, limited: results.length >= 50 || rows.results.length >= 100 })
+    return json({
+      results,
+      limited:
+        results.length >= 50 ||
+        scanned < candidates.results.length ||
+        candidates.results.length >= 100,
+      scannedBytes,
+    })
   }
   if (path === '/api/sessions' && request.method === 'GET') {
+    const params = new URL(request.url).searchParams
+    const page = params.has('limit')
+    const limit = Math.min(200, Math.max(1, Number(params.get('limit')) || 200))
+    const offset = Math.max(0, Number(params.get('offset')) || 0)
+    if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(offset)) {
+      throw new HttpError(400, 'Invalid page')
+    }
     const [state, sessions] = await env.DB.batch([
       env.DB.prepare('SELECT generation, revision FROM cloud_state WHERE id = 1'),
       env.DB.prepare(
-        "SELECT id, title, created_at AS createdAt, updated_at AS updatedAt, revision, COALESCE(json_extract(data, '$.pinned'), 0) AS pinned FROM sessions WHERE deleted = 0 ORDER BY updated_at DESC"
-      ),
+        "SELECT id, title, created_at AS createdAt, updated_at AS updatedAt, revision, COALESCE(json_extract(data, '$.pinned'), 0) AS pinned FROM sessions WHERE deleted = 0 ORDER BY updated_at DESC, id LIMIT ? OFFSET ?"
+      ).bind(page ? limit : 10_000, page ? offset : 0),
     ])
     return json({
       ...(state.results[0] as object),
+      ...(page && sessions.results.length === limit ? { nextOffset: offset + limit } : {}),
       sessions: (sessions.results as Record<string, unknown>[]).map((session) => ({
         ...session,
         pinned: Boolean(session.pinned),
@@ -53,7 +94,7 @@ export async function storage(request: Request, env: Env, path: string): Promise
     })
   }
   if (path === '/api/history' && request.method === 'PUT') {
-    const body = await readJsonObject(request)
+    const body = await readJsonObject(request, bodyLimits.history)
     if (!Array.isArray(body.sessions) || typeof body.revision !== 'string') {
       throw new HttpError(400, 'Invalid history')
     }
@@ -110,7 +151,7 @@ export async function storage(request: Request, env: Env, path: string): Promise
       })
     }
     if (request.method === 'PUT') {
-      const body = (await readJsonObject(request)) as {
+      const body = (await readJsonObject(request, bodyLimits.session)) as {
         session: unknown
         revision: string | null
         generation: string
@@ -174,15 +215,13 @@ export async function storage(request: Request, env: Env, path: string): Promise
     }
     const key = `attachments/${id}`
     if (request.method === 'PUT') {
-      const size = Number(request.headers.get('Content-Length'))
-      if (!Number.isFinite(size) || size > 64 * 1024 * 1024) {
-        throw new HttpError(413, 'Attachment exceeds 64 MiB')
+      const upload = crypto.randomUUID()
+      await pinObjects(env, `upload_${upload}`, upload, [key])
+      try {
+        await putAttachment(request, env.FILES, key)
+      } finally {
+        await unpinObjects(env, `upload_${upload}`, upload)
       }
-      await env.FILES.put(key, request.body, {
-        httpMetadata: {
-          contentType: request.headers.get('Content-Type') ?? 'application/octet-stream',
-        },
-      })
       return json({ ok: true })
     }
     if (request.method === 'GET' || request.method === 'HEAD') {

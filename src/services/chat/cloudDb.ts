@@ -13,8 +13,12 @@ let generation = ''
 let indexedSessions = new Map<string, SessionSummary & { revision: string }>()
 let queue: Promise<unknown> = Promise.resolve()
 const lineage = new Map<string, string>()
-const confirmedFiles = new Set<string>()
 const pending = new Map<string, Session>()
+const durableSnapshots = new WeakMap<Session, Promise<void>>()
+const pinQueues = new Map<string, Promise<void>>()
+/** Generation needs a local commit and confirmed recovery pins before dispatch. */
+export const waitForSnapshot = (session: Session): Promise<void> =>
+  durableSnapshots.get(session) ?? Promise.reject(new Error('Snapshot was not queued for saving'))
 const writer = crypto.randomUUID()
 const recoveredSources = new Map<string, local.PendingCloudSession>()
 let recovered = false
@@ -24,6 +28,7 @@ const serial = <T>(run: () => Promise<T>): Promise<T> => {
   queue = task.catch(() => {})
   return task
 }
+export const settleSaves = () => serial(async () => {})
 
 export const pendingIds = () => [...pending.keys()]
 export const newStamp = (): NonNullable<Session['cloud']> => ({ revision: null, generation })
@@ -41,10 +46,61 @@ const cacheSession = (session: Session) => {
   void local.cacheCloudSession(session).catch(local.reportStorageError('cache cloud session'))
 }
 export const readIndex = async (): Promise<Index> => {
-  const index = (await (await cloudFetch('/sessions')).json()) as Index
+  let index: Index | undefined
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let offset = 0
+    let complete = true
+    const sessions: Index['sessions'] = []
+    let first: Index | undefined
+    do {
+      const page = (await (
+        await cloudFetch(`/sessions?limit=200&offset=${offset}`)
+      ).json()) as Index & { nextOffset?: number }
+      first ??= page
+      if (page.revision !== first.revision || page.generation !== first.generation) {
+        complete = false
+        break
+      }
+      sessions.push(...page.sessions)
+      if (sessions.length > 10_000) {
+        throw new Error('History exceeds the supported index capacity')
+      }
+      if (page.nextOffset === undefined) {
+        break
+      }
+      if (page.nextOffset <= offset || sessions.length > 10_000) {
+        throw new Error('History exceeds the supported index capacity')
+      }
+      offset = page.nextOffset
+    } while (offset <= 10_000)
+    if (complete && first) {
+      index = { ...first, sessions }
+      break
+    }
+  }
+  if (!index) {
+    throw new Error('History changed while loading. Retry sync.')
+  }
   generation = index.generation
   indexedSessions = new Map(index.sessions.map((session) => [session.id, session]))
   return index
+}
+
+export async function verifyGenerationSource(session: Session): Promise<void> {
+  // Observe this page's confirmed lineage only after earlier queued writes settle.
+  await serial(async () => {})
+  const index = await readIndex()
+  const remote = index.sessions.find((item) => item.id === session.id)
+  if (
+    session.cloud?.generation !== index.generation ||
+    (remote
+      ? !isSessionCurrent(session, index.generation, remote.revision)
+      : session.cloud?.revision !== null)
+  ) {
+    throw new Error(
+      'This conversation changed in another page. Keep your local copy, sync and retry.'
+    )
+  }
 }
 
 export const loadSessionSummaries = async (): Promise<SessionSummary[]> => {
@@ -94,9 +150,7 @@ export const loadSession = async (id: string, prefetch = false): Promise<Session
 }
 
 async function uploadOriginal(id: string, blob: Blob): Promise<void> {
-  if (confirmedFiles.has(id)) {
-    return
-  }
+  // A previous save's HEAD is not proof after owner maintenance deletes an orphan.
   const response = await fetch(`/api/files/${encodeURIComponent(id)}`, {
     method: 'HEAD',
     credentials: 'same-origin',
@@ -112,7 +166,6 @@ async function uploadOriginal(id: string, blob: Blob): Promise<void> {
   } else if (!response.ok) {
     throw new Error(`Attachment sync HTTP ${response.status}`)
   }
-  confirmedFiles.add(id)
 }
 
 export const saveSession = (session: Session, files: local.StoredFile[] = []): Promise<void> => {
@@ -120,10 +173,41 @@ export const saveSession = (session: Session, files: local.StoredFile[] = []): P
   pending.set(session.id, session)
   const version = crypto.randomUUID()
   const durable = local.putOutbox(session, version, files, writer)
+  const pinId = `${writer}_${session.id}`
+  const keys = [
+    ...new Set(
+      session.messages.flatMap((message) =>
+        message.role === 'user'
+          ? message.files.flatMap((file) => [
+              `attachments/${file.id}`,
+              ...(file.serverId && /^[a-zA-Z0-9_-]{1,160}$/.test(file.serverId)
+                ? [`provider/${file.serverId}`]
+                : []),
+            ])
+          : []
+      )
+    ),
+  ]
+  const protectedSnapshot = (pinQueues.get(pinId) ?? Promise.resolve())
+    .catch(() => {})
+    .then(async () => {
+      await durable
+      await cloudFetch(`/storage/pins/${pinId}`, cloudJson('PUT', { version, keys }))
+    })
+  pinQueues.set(pinId, protectedSnapshot)
+  void protectedSnapshot
+    .finally(() => {
+      if (pinQueues.get(pinId) === protectedSnapshot) {
+        pinQueues.delete(pinId)
+      }
+    })
+    .catch(() => {})
+  durableSnapshots.set(session, protectedSnapshot)
+  void protectedSnapshot.catch(() => {})
   // The serial network task observes this failure; mark it handled while it waits in the queue.
   void durable.catch(() => {})
   return serial(async () => {
-    await durable
+    await protectedSnapshot
     if (!generation) {
       await readIndex()
     }
@@ -135,9 +219,6 @@ export const saveSession = (session: Session, files: local.StoredFile[] = []): P
         continue
       }
       for (const file of message.files) {
-        if (confirmedFiles.has(file.id)) {
-          continue
-        }
         const blob = await local.loadFile(file.id)
         if (blob) {
           await uploadOriginal(file.id, blob)
@@ -168,8 +249,12 @@ export const saveSession = (session: Session, files: local.StoredFile[] = []): P
     cacheSession({ ...data, cloud: { revision: result.revision, generation: source.generation } })
     await forgetRecoveredSource(session.id)
     if (pending.get(session.id) === session) {
-      pending.delete(session.id)
       await local.removeOutbox(session.id, version, writer)
+      if (pending.get(session.id) === session) {
+        pending.delete(session.id)
+      }
+      // A crash before IndexedDB deletion must leave the recovery reference pinned.
+      await cloudFetch(`/storage/pins/${pinId}`, cloudJson('DELETE', { version })).catch(() => {})
     }
   })
 }
@@ -221,19 +306,44 @@ export const loadFile = async (id: string): Promise<Blob | undefined> => {
 export const commitStaging = (): Promise<SessionSummary[]> =>
   serial(async () => {
     const index = await readIndex()
-    const sessions = await local.loadStagingSessions()
-    for (const file of await local.loadStagingFiles()) {
-      await uploadOriginal(file.id, file.blob)
+    const sessions: SessionSummary[] = []
+    const started = (await (
+      await cloudFetch('/history/imports', cloudJson('POST', { revision: index.revision }))
+    ).json()) as { id: string }
+    let replaced: { generation: string }
+    const pinId = `import_${started.id}`
+    try {
+      const keys: string[] = []
+      for await (const file of local.stagingFiles()) {
+        keys.push(`attachments/${file.id}`)
+      }
+      await cloudFetch(`/storage/pins/${pinId}`, cloudJson('PUT', { version: started.id, keys }))
+      for await (const file of local.stagingFiles()) {
+        await uploadOriginal(file.id, file.blob)
+      }
+      for await (const session of local.stagingSessions()) {
+        await cloudFetch(
+          `/history/imports/${started.id}`,
+          cloudJson('PUT', { session: { ...session, cloud: undefined } })
+        )
+        sessions.push(toSessionSummary(session))
+      }
+      replaced = (await (
+        await cloudFetch(
+          `/history/imports/${started.id}/commit`,
+          cloudJson('POST', { count: sessions.length })
+        )
+      ).json()) as { generation: string }
+    } catch (error) {
+      // A lost commit response must not turn an applied import into a reported failure.
+      const current = await readIndex().catch(() => undefined)
+      if (current?.generation === started.id) {
+        replaced = { generation: started.id }
+      } else {
+        await cloudFetch(`/history/imports/${started.id}`, { method: 'DELETE' }).catch(() => {})
+        throw error
+      }
     }
-    const replaced = (await (
-      await cloudFetch(
-        '/history',
-        cloudJson('PUT', {
-          revision: index.revision,
-          sessions: sessions.map((s) => ({ ...s, cloud: undefined })),
-        })
-      )
-    ).json()) as { generation: string }
     generation = replaced.generation
     indexedSessions.clear()
     lineage.clear()
@@ -243,6 +353,10 @@ export const commitStaging = (): Promise<SessionSummary[]> =>
     pending.clear()
     recoveredSources.clear()
     await local.clearStaging()
+    await cloudFetch(`/history/imports/${started.id}/pins`, { method: 'DELETE' }).catch(() => {})
+    await cloudFetch(`/storage/pins/${pinId}`, cloudJson('DELETE', { version: started.id })).catch(
+      () => {}
+    )
     return sessions.map(toSessionSummary)
   })
 

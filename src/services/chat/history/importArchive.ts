@@ -43,7 +43,7 @@ const imageType = (bytes: Uint8Array): string => {
 }
 
 const readJson = async (entry: ArchiveEntry): Promise<unknown> => {
-  const text = await (await readEntry(entry)).text()
+  const text = await (await readEntry(entry, 16 * 1024 * 1024)).text()
   try {
     return JSON.parse(text)
   } catch {

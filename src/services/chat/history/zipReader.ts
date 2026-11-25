@@ -1,4 +1,5 @@
 import { Inflate } from 'fflate'
+import { BackupError } from './errors.js'
 
 const READ_CHUNK_BYTES = 256 * 1024
 // 控制每轮同步解压的工作量；输出交给调用方保存后才继续读取。
@@ -240,6 +241,9 @@ export type ArchiveEntry = {
  */
 export async function* readArchive(file: File): AsyncGenerator<ArchiveEntry> {
   const directory = await readDirectory(file)
+  if (directory.entries.reduce((total, entry) => total + entry.size, 0) > 2 * 1024 * 1024 * 1024) {
+    throw new BackupError('backupCapacity')
+  }
   for (const [index, entry] of directory.entries.entries()) {
     const boundary = directory.entries[index + 1]?.offset ?? directory.offset
     const start = await readEntryOffset(file, entry, boundary)
@@ -299,7 +303,13 @@ export async function* readArchive(file: File): AsyncGenerator<ArchiveEntry> {
 }
 
 /** 读出整个条目：会话 JSON 需要完整解析，图片需要识别类型后整张保存。 */
-export const readEntry = async (entry: ArchiveEntry): Promise<Blob> => {
+export const readEntry = async (
+  entry: ArchiveEntry,
+  maxBytes = 64 * 1024 * 1024
+): Promise<Blob> => {
+  if (entry.size > maxBytes) {
+    throw new BackupError('backupCapacity')
+  }
   const parts: Blob[] = []
   for await (const chunk of entry.stream) {
     parts.push(new Blob([chunk as Uint8Array<ArrayBuffer>]))

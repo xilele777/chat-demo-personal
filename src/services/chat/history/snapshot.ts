@@ -73,6 +73,7 @@ export const snapshotSession = (original: Session, now = Date.now()): Session =>
           'This tool was unfinished when the backup was made. Its outcome is unknown; verify before retrying.'
       }
     }
+    delete settled.operationRequestId
     return settled
   })
   return session
@@ -141,7 +142,7 @@ export const exportSnapshot = async (
 
 const readJson = async (entry: ArchiveEntry): Promise<unknown> => {
   try {
-    return JSON.parse(await (await readEntry(entry)).text())
+    return JSON.parse(await (await readEntry(entry, 16 * 1024 * 1024)).text())
   } catch (error) {
     if (error instanceof SyntaxError) {
       return fail('backupInvalidJson')
