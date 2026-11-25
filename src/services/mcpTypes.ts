@@ -9,6 +9,9 @@ export type McpServer = {
   oauthStatus?: 'authorized' | 'required'
   tools: McpTool[]
   disabledTools: string[]
+  /** Owner-selected automatic reads; annotations alone grant no permission. */
+  trustedReadTools?: string[]
+  configurationRevision?: string
 }
 export type McpToolBlock = {
   type: 'mcp_tool'
@@ -16,7 +19,7 @@ export type McpToolBlock = {
   server: string
   name: string
   input: Record<string, unknown>
-  status: 'approval' | 'running' | 'done' | 'error' | 'denied'
+  status: 'approval' | 'running' | 'done' | 'error' | 'denied' | 'unknown'
   approvalId?: string
   output?: string
 }

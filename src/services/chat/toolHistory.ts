@@ -12,7 +12,9 @@ export const historicalMcpContext = (tools: McpToolBlock[]): string => {
         server: tool.server.slice(0, 160),
         tool: tool.name.slice(0, 200),
         status:
-          tool.status === 'approval' || tool.status === 'running' ? 'outcome_unknown' : tool.status,
+          tool.status === 'approval' || tool.status === 'running' || tool.status === 'unknown'
+            ? 'outcome_unknown'
+            : tool.status,
         ...(excerptLimit
           ? {
               input_excerpt: JSON.stringify(tool.input).slice(0, excerptLimit),

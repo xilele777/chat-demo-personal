@@ -5,6 +5,7 @@ import { WebTools } from './webTools.js'
 import { parallelEvents } from './parallel.js'
 import { agentPolicy } from './policy.js'
 import type { Env } from './types.js'
+import { trustedRead } from './mcpPolicy.js'
 
 export type RuntimeCall = { name: string; input: Record<string, unknown> }
 export type RuntimeResult = { text: string; isError: boolean }
@@ -61,9 +62,7 @@ export class ToolRuntime {
     return (
       this.web.handles(call.name) ||
       call.name === this.cache.name ||
-      this.tools.some(
-        (entry) => entry.alias === call.name && entry.tool.annotations?.readOnlyHint === true
-      )
+      this.tools.some((entry) => entry.alias === call.name && trustedRead(entry))
     )
   }
   private async *run(
@@ -74,6 +73,24 @@ export class ToolRuntime {
     if (call.name === this.catalog.loadName && this.catalog.deferred) {
       if (this.loads++ >= this.catalog.maxLoads) {
         return { text: 'MCP definition loading budget exhausted.', isError: true }
+      }
+      // Validate a selected service before exposing its full schema; catalog reads stay local.
+      const names = call.input.names
+      if (
+        Array.isArray(names) &&
+        names.length <= 3 &&
+        names.every((name) => typeof name === 'string')
+      ) {
+        try {
+          for (const name of new Set(names)) {
+            await this.tools.find((entry) => entry.alias === name)?.prepare?.()
+          }
+        } catch {
+          return {
+            text: 'MCP service unavailable, authorization revoked, or catalog changed. Check the connection and start a new request; no tool was dispatched.',
+            isError: true,
+          }
+        }
       }
       const result = this.catalog.load(call.input)
       return { text: JSON.stringify(result), isError: Boolean(result.error) }
