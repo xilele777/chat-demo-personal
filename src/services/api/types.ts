@@ -159,8 +159,8 @@ export type AssistantBlockParam =
 export type MessageParam =
   /** Chat Engine 扩展角色，位于对应 user 前；需服务端支持 latest_reminder。 */
   | { role: 'latest_reminder'; content: string }
-  | { role: 'user'; content: string | (FileBlockParam | TextBlockParam)[] }
-  | { role: 'assistant'; content: AssistantBlockParam[] }
+  | { role: 'user'; content: string | (FileBlockParam | TextBlockParam)[]; contextId?: string }
+  | { role: 'assistant'; content: AssistantBlockParam[]; contextId?: string }
 
 /** 开启联网搜索与边想边搜 */
 export type DeepseekWebSearchTool = {
@@ -177,6 +177,7 @@ export type DeepseekReadUrlTool = {
 export type ReasoningEffort = 'auto' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 export type CreateMessageRequest = {
+  operationRequestId?: string
   model: ChatModel
   system: string
   messages: MessageParam[]
@@ -220,6 +221,8 @@ export type ContentBlockDelta =
 
 /** 流式事件：SSE 的 event 名与 JSON 的 type 相同，以 message_stop 结束，不发送 [DONE] */
 export type MessageStreamEvent =
+  | { type: 'context_report'; report: import('../chat/contextReport.js').ContextReport }
+  | { type: 'branch_memory'; memory: import('../chat/branchMemory.js').BranchMemory }
   | { type: 'mcp_tool_status'; block: McpToolBlock }
   | {
       type: 'message_start'

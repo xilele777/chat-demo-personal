@@ -1,8 +1,15 @@
 import { validSessionStructure } from '../src/services/chat/validation.js'
+import { bodyLimits, readBody } from './bodyLimits.js'
+import type { ModelCapabilities } from '../src/services/modelCapabilities.js'
+import { HttpError } from './httpError.js'
+export { HttpError } from './httpError.js'
 
 export type Protocol = 'deepseek' | 'anthropic' | 'openai'
 
 export interface Env {
+  requestId?: string
+  OBSERVABILITY?: string
+  OBJECT_GC_TRACKING_SINCE?: string
   /** Request runtime hook, attached by the Worker entry point rather than a binding. */
   waitUntil?: (promise: Promise<unknown>) => void
   ASSETS: Fetcher
@@ -17,6 +24,21 @@ export interface Env {
   OPENAI_REASONING_EFFORTS?: string
   MAX_INPUT_TOKENS?: string
   MODEL_CONTEXT_TOKENS?: string
+  MODEL_PROFILES?: string
+  MODEL_RESPONSE_TIMEOUT_MS?: string
+  MODEL_FIRST_EVENT_TIMEOUT_MS?: string
+  MODEL_IDLE_TIMEOUT_MS?: string
+  MODEL_TOTAL_TIMEOUT_MS?: string
+  contextTrace?: {
+    totalRounds: number
+    round: number
+    report?: import('../src/services/chat/contextReport.js').ContextReport
+    sources?: import('./context.js').ContextMessage[]
+    memory?: import('../src/services/chat/branchMemory.js').BranchMemory
+  }
+  operationRequestId?: string
+  /** Resolved once for the selected model; never supplied by the browser. */
+  modelCapabilities?: ModelCapabilities
   MAX_AGENT_ROUNDS?: string
   MAX_TOOL_CALLS?: string
   MAX_SEARCH_CALLS?: string
@@ -48,15 +70,6 @@ export interface CloudSession {
   rootMessageId?: string | null
 }
 
-export class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string
-  ) {
-    super(message)
-  }
-}
-
 export const json = (value: unknown, status = 200) =>
   Response.json(value, {
     status,
@@ -65,10 +78,14 @@ export const json = (value: unknown, status = 200) =>
 
 export const validId = (value: string) => /^[a-zA-Z0-9_-]{1,160}$/.test(value)
 
-export async function readJsonObject(request: Request): Promise<Record<string, unknown>> {
+export async function readJsonObject(
+  request: Request,
+  maxBytes = bodyLimits.json
+): Promise<Record<string, unknown>> {
+  const body = await readBody(request, maxBytes)
   let value: unknown
   try {
-    value = await request.json()
+    value = JSON.parse(await body.text())
   } catch {
     throw new HttpError(400, 'Invalid JSON body')
   }

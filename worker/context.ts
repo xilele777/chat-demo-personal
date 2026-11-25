@@ -6,10 +6,14 @@ export type ContextMessage = {
   content: unknown
   /** Internal round marker, stripped before sending to the provider. */
   continuation?: boolean
+  /** Internal preflight estimate before attachment bytes are read. */
+  estimatedContentTokens?: number
   [key: string]: unknown
 }
 export const CONTINUE_PROMPT =
   'Continue the previous answer from exactly where it stopped. Do not repeat the existing answer.'
+export const CONTEXT_EVIDENCE_INSTRUCTIONS =
+  'Use only evidence in the supplied conversation. Complete older rounds may have been omitted to fit the input budget. If an earlier constraint or fact is missing, say that its evidence is unavailable and ask the user or verify it with a read tool; never invent the omitted history.'
 
 // Approximate tokens, not UTF-8 bytes: ASCII averages 3 characters/token,
 // non-ASCII reserves 2 tokens/code point. Images reserve 4096 tokens each.
@@ -68,7 +72,7 @@ export const limitContext = <T extends ContextMessage>(
   }
   const messageCost = (message: T) =>
     16 +
-    contextCost(message.content) +
+    (message.estimatedContentTokens ?? contextCost(message.content)) +
     contextCost(JSON.stringify(message.tool_calls ?? '')) +
     contextCost(JSON.stringify(message.provider_output ?? ''))
   const costs = result.map(messageCost)

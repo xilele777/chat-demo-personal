@@ -2,6 +2,7 @@ import { translate, type TranslationMessage } from '../../i18n/index.js'
 import { resizeUploadImage } from '../../utils/resizeUploadImage.js'
 import { readMessageEvent } from './parseEvent.js'
 import { readServerSentEvents } from './sse.js'
+import { boundedResponseText, withSignal, type GenerationTimeouts } from './streamLimits.js'
 import type {
   ApiErrorBody,
   CreateMessageRequest,
@@ -54,7 +55,7 @@ const readErrorResponse = async (
   kind: 'http' | 'protocol' = 'http',
   fallback = response.statusText
 ): Promise<ApiError> => {
-  const text = await response.text().catch(() => '')
+  const text = await boundedResponseText(response).catch(() => '')
   let message = text || fallback
   try {
     const body: unknown = JSON.parse(text)
@@ -145,23 +146,47 @@ const hasFile = (body: CreateMessageRequest) =>
 export async function* streamMessage(
   apiKey: string,
   body: CreateMessageRequest,
-  signal: AbortSignal
+  signal: AbortSignal,
+  timeouts?: GenerationTimeouts
 ): AsyncGenerator<MessageStreamEvent> {
-  const response = await request(`${ANTHROPIC_BASE_URL}/messages`, {
-    method: 'POST',
-    headers: {
-      ...anthropicHeaders(apiKey, hasFile(body)),
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-    },
-    body: JSON.stringify({ ...body, stream: true }),
-    signal,
-  })
+  const responseMs = Math.max(
+    180_000,
+    timeouts ? timeouts.responseMs + timeouts.firstEventMs + 30_000 : 0
+  )
+  const idleMs = Math.max(240_000, responseMs, timeouts ? timeouts.idleMs + 30_000 : 0)
+  const deadline = new AbortController()
+  const timer = setTimeout(
+    () => deadline.abort(new DOMException('Response timed out', 'TimeoutError')),
+    responseMs
+  )
+  const requestSignal = AbortSignal.any([signal, deadline.signal])
+  let response: Response
+  try {
+    response = await withSignal(
+      request(`${ANTHROPIC_BASE_URL}/messages`, {
+        method: 'POST',
+        headers: {
+          ...anthropicHeaders(apiKey, hasFile(body)),
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+        },
+        body: JSON.stringify({ ...body, stream: true }),
+        signal: requestSignal,
+      }),
+      requestSignal
+    )
+  } finally {
+    clearTimeout(timer)
+  }
   const contentType = response.headers.get('Content-Type') ?? ''
   if (!response.body || !contentType.includes('text/event-stream')) {
     throw await readErrorResponse(response, 'protocol', '')
   }
-  for await (const { event: eventName, data } of readServerSentEvents(response.body, signal)) {
+  for await (const { event: eventName, data } of readServerSentEvents(response.body, signal, {
+    firstEventMs: idleMs,
+    idleMs,
+    totalMs: Math.max(45 * 60_000, (timeouts?.totalMs ?? 0) + 30_000),
+  })) {
     let payload: unknown
     try {
       payload = JSON.parse(data)

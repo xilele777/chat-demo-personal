@@ -89,6 +89,10 @@ export const applyEvent = (
           event.block,
         ],
       }
+    case 'context_report':
+      return { ...next, contextReports: [...(next.contextReports ?? []), event.report].slice(-100) }
+    case 'branch_memory':
+      return { ...next, branchMemory: event.memory }
     case 'message_start':
       return { ...next, usage: mergeUsageSnapshot(next.usage, event.message.usage) }
     case 'content_block_start': {
@@ -219,12 +223,13 @@ const isUsableReply = (message: Message): message is AssistantMessage =>
     (['done', 'stopped', 'error'].includes(message.status) && Boolean(message.mcpTools?.length)))
 
 /** 有文件时用内容块数组：先文件后文本，文件按 Files API 的 file_id 引用 */
-const toUserParam = ({ content, files }: UserMessage): MessageParam => {
+const toUserParam = ({ id, content, files }: UserMessage, contextId = false): MessageParam => {
   const blocks = toFileBlocks(files)
   return blocks.length === 0
-    ? { role: 'user', content }
+    ? { role: 'user', content, ...(contextId ? { contextId: id } : {}) }
     : {
         role: 'user',
+        ...(contextId ? { contextId: id } : {}),
         content: [...blocks, ...(content ? [{ type: 'text' as const, text: content }] : [])],
       }
 }
@@ -349,9 +354,15 @@ const toAssistantParam = (
   }
   return {
     role: 'assistant',
+    ...(includeSearchSources ? { contextId: reply.id } : {}),
     content: content.filter((block) => block.type !== 'text' || block.text !== ''),
   }
 }
+
+export const toMemorySource = (message: Message) =>
+  message.role === 'user'
+    ? toUserParam(message, true)
+    : toAssistantParam(message, false, false, true)
 
 /** 成对保留回答或 MCP 操作记录，具体协议不支持的空内容在组装请求时省略。 */
 export const getContextRounds = (history: Message[]): [UserMessage, AssistantMessage][] => {
@@ -397,10 +408,10 @@ export const toRequestMessages = (
       continue
     }
     appendReminder(reply.latestReminder)
-    messages.push(toUserParam(user), assistant)
+    messages.push(toUserParam(user, includeSearchSources), assistant)
   }
   appendReminder(latestReminder)
-  messages.push(toUserParam(question))
+  messages.push(toUserParam(question, includeSearchSources))
   if (prefix?.prefix) {
     const assistant = toAssistantParam(prefix, true, thinking, includeSearchSources)
     // 没有非空白正文或有效思考时直接重发原问题，避免服务端拒绝空 Prefill。

@@ -5,6 +5,8 @@ import type {
   TextCitation,
   MessageUsage,
 } from './types.js'
+import { validContextReport } from '../chat/contextReport.js'
+import { validBranchMemory } from '../chat/branchMemory.js'
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -223,6 +225,10 @@ export const readMessageEvent = (value: unknown): MessageStreamEvent | null => {
   switch (value.type) {
     case 'ping':
       return { type: 'ping' }
+    case 'context_report':
+      return validContextReport(value.report) ? (value as MessageStreamEvent) : null
+    case 'branch_memory':
+      return validBranchMemory(value.memory) ? (value as MessageStreamEvent) : null
     case 'mcp_tool_status': {
       const block = value.block
       if (
@@ -232,7 +238,9 @@ export const readMessageEvent = (value: unknown): MessageStreamEvent | null => {
         !isString(block.server) ||
         !isString(block.name) ||
         !isRecord(block.input) ||
-        !['approval', 'running', 'done', 'error', 'denied'].includes(block.status as string) ||
+        !['approval', 'running', 'done', 'error', 'denied', 'unknown'].includes(
+          block.status as string
+        ) ||
         !isOptionalString(block.output) ||
         !isOptionalString(block.approvalId)
       ) {

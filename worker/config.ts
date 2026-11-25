@@ -1,18 +1,10 @@
-import type { ReasoningEffort } from '../src/services/api/types.js'
 import type { Env } from './types.js'
 import { searchAvailable } from './search.js'
 import { tokenBudgets, agentPolicy } from './policy.js'
+import { modelCatalog, resolveModelCapabilities } from './modelConfig.js'
+import { generationTimeouts } from './providerTransport.js'
 
-export const reasoningEfforts = (env: Env): Exclude<ReasoningEffort, 'auto'>[] => {
-  if (env.UPSTREAM_PROTOCOL !== 'openai') {
-    return []
-  }
-  const defaults = /^(gpt-[5-9]|o[1-9])/.test(env.UPSTREAM_MODEL) ? 'low,medium,high' : ''
-  const allowed = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh'])
-  return [
-    ...new Set((env.OPENAI_REASONING_EFFORTS ?? defaults).split(',').map((v) => v.trim())),
-  ].filter((value) => allowed.has(value)) as Exclude<ReasoningEffort, 'auto'>[]
-}
+export const reasoningEfforts = (env: Env) => resolveModelCapabilities(env).reasoningEfforts
 
 export const publicConfig = (env: Env) => ({
   cloud: true,
@@ -23,8 +15,10 @@ export const publicConfig = (env: Env) => ({
   speech: env.UPSTREAM_PROTOCOL === 'deepseek',
   thinking: env.UPSTREAM_PROTOCOL === 'deepseek',
   reasoningEfforts: reasoningEfforts(env),
-  reasoningEffortsAutomatic: env.OPENAI_REASONING_EFFORTS === undefined,
+  reasoningEffortsAutomatic: false,
+  modelCatalog: modelCatalog(env),
   mcp: env.UPSTREAM_PROTOCOL === 'openai' || env.UPSTREAM_PROTOCOL === 'anthropic',
   tokenBudgets: tokenBudgets(env),
   agentPolicy: agentPolicy(env),
+  generationTimeouts: generationTimeouts(env),
 })

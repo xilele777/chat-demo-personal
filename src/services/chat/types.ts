@@ -100,6 +100,9 @@ export type AssistantMessage = MessageBranch & {
   /** 本回答的累计用量，包含续写和本轮工具循环中的已返回用量 */
   usage?: MessageUsage
   mcpTools?: McpToolBlock[]
+  operationRequestId?: string
+  contextReports?: import('./contextReport.js').ContextReport[]
+  branchMemory?: import('./branchMemory.js').BranchMemory
   error?: {
     /** upload：发送前补传附件失败，请求没有发出 */
     kind: ApiErrorKind | 'upload'

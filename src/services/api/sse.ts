@@ -6,6 +6,8 @@
  * 注释行（如服务端保活的 `: keep-alive`）直接忽略；`retry` 只对 EventSource 重连有意义，这里不处理。
  */
 
+import { withSignal } from './streamLimits.js'
+
 export type ServerSentEvent = {
   /** `event` 字段，缺省为 `message` */
   event: string
@@ -16,8 +18,23 @@ export type ServerSentEvent = {
 }
 
 const LINE_BREAK = /\r\n|\r|\n/g
+const makesProgress = (event: ServerSentEvent) => {
+  if (event.event === 'ping') {
+    return false
+  }
+  try {
+    return JSON.parse(event.data)?.type !== 'ping'
+  } catch {
+    return true
+  }
+}
 
 export class ServerSentEventDecoder {
+  constructor(
+    private readonly maxLineBytes = 1024 * 1024,
+    private readonly maxEventBytes = 2 * 1024 * 1024
+  ) {}
+  private eventBytes = 0
   private buffer = ''
   private data = ''
   private hasData = false
@@ -26,6 +43,14 @@ export class ServerSentEventDecoder {
 
   /** 输入一段已解码的文本，返回其中完整的事件 */
   push(text: string): ServerSentEvent[] {
+    // Bound temporary strings even if a transport returns one very large chunk.
+    if (text.length > 8192) {
+      const events: ServerSentEvent[] = []
+      for (let offset = 0; offset < text.length; offset += 8192) {
+        events.push(...this.push(text.slice(offset, offset + 8192)))
+      }
+      return events
+    }
     this.buffer += text
     const events: ServerSentEvent[] = []
     let lineStart = 0
@@ -35,13 +60,14 @@ export class ServerSentEventDecoder {
       if (match[0] === '\r' && LINE_BREAK.lastIndex === this.buffer.length) {
         break
       }
-      const event = this.processLine(this.buffer.slice(lineStart, match.index))
+      const event = this.processLine(this.buffer.slice(lineStart, match.index), match[0].length)
       if (event) {
         events.push(event)
       }
       lineStart = LINE_BREAK.lastIndex
     }
     this.buffer = this.buffer.slice(lineStart)
+    this.checkLine(this.buffer.endsWith('\r') ? this.buffer.slice(0, -1) : this.buffer)
     return events
   }
 
@@ -55,8 +81,14 @@ export class ServerSentEventDecoder {
     return event ? [event] : []
   }
 
-  private processLine(line: string): ServerSentEvent | null {
+  private processLine(line: string, breakBytes = 1): ServerSentEvent | null {
+    const bytes = this.checkLine(line)
+    this.eventBytes += bytes + breakBytes
+    if (this.eventBytes > this.maxEventBytes) {
+      throw new Error('SSE event exceeds the size limit')
+    }
     if (line === '') {
+      this.eventBytes = 0
       return this.dispatch()
     }
     if (line.startsWith(':')) {
@@ -87,6 +119,17 @@ export class ServerSentEventDecoder {
     return null
   }
 
+  private checkLine(line: string): number {
+    if (line.length > this.maxLineBytes) {
+      throw new Error('SSE line exceeds the size limit')
+    }
+    const bytes = new TextEncoder().encode(line).length
+    if (bytes > this.maxLineBytes) {
+      throw new Error('SSE line exceeds the size limit')
+    }
+    return bytes
+  }
+
   private dispatch(): ServerSentEvent | null {
     const event: ServerSentEvent | null = this.hasData
       ? { event: this.eventType || 'message', data: this.data, lastEventId: this.lastEventId }
@@ -104,8 +147,18 @@ export class ServerSentEventDecoder {
  */
 export async function* readServerSentEvents(
   stream: ReadableStream<Uint8Array>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options: {
+    firstEventMs?: number
+    idleMs?: number
+    totalMs?: number
+    maxLineBytes?: number
+    maxEventBytes?: number
+  } = {}
 ): AsyncGenerator<ServerSentEvent> {
+  const total = AbortSignal.timeout(options.totalMs ?? 45 * 60_000)
+  let deadline = performance.now() + (options.firstEventMs ?? 240_000)
+  const combined = signal ? AbortSignal.any([signal, total]) : total
   const reader = stream.getReader()
   const onAbort = () => {
     reader.cancel(signal?.reason).catch(() => {})
@@ -116,18 +169,26 @@ export async function* readServerSentEvents(
   }
   // TextDecoder 默认会去掉开头的 BOM；stream: true 保证多字节字符跨分片时不被截断
   const textDecoder = new TextDecoder()
-  const decoder = new ServerSentEventDecoder()
+  const decoder = new ServerSentEventDecoder(options.maxLineBytes, options.maxEventBytes)
   let finished = false
   try {
     for (;;) {
-      const { done, value } = await reader.read()
+      const remaining = Math.max(1, Math.ceil(deadline - performance.now()))
+      const readSignal = AbortSignal.any([combined, AbortSignal.timeout(remaining)])
+      const { done, value } = await withSignal(reader.read(), readSignal)
+      combined.throwIfAborted()
       if (done) {
         finished = true
         yield* decoder.push(textDecoder.decode())
         yield* decoder.end()
         return
       }
-      yield* decoder.push(textDecoder.decode(value, { stream: true }))
+      // Complete data events constitute progress; comments and incomplete lines do not.
+      const events = decoder.push(textDecoder.decode(value, { stream: true }))
+      if (events.some(makesProgress)) {
+        deadline = performance.now() + (options.idleMs ?? 240_000)
+      }
+      yield* events
     }
   } finally {
     signal?.removeEventListener('abort', onAbort)

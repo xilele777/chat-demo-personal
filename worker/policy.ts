@@ -1,4 +1,5 @@
 import { HttpError, type Env } from './types.js'
+import { resolveModelCapabilities } from './modelConfig.js'
 
 const integer = (
   value: string | undefined,
@@ -15,25 +16,8 @@ const integer = (
 }
 
 export const tokenBudgets = (env: Env) => {
-  const output = integer(
-    env.MAX_OUTPUT_TOKENS,
-    env.UPSTREAM_PROTOCOL === 'openai' ? 32768 : 8192,
-    'MAX_OUTPUT_TOKENS'
-  )
-  let input = integer(
-    env.MAX_INPUT_TOKENS,
-    env.UPSTREAM_PROTOCOL === 'openai' ? 196608 : 64000,
-    'MAX_INPUT_TOKENS',
-    1024
-  )
-  if (env.MODEL_CONTEXT_TOKENS !== undefined) {
-    const window = integer(env.MODEL_CONTEXT_TOKENS, 0, 'MODEL_CONTEXT_TOKENS', 2048)
-    input = Math.min(input, window - output - 1024)
-    if (input < 1024) {
-      throw new HttpError(503, 'MODEL_CONTEXT_TOKENS must leave room for input and output')
-    }
-  }
-  return { input, output }
+  const capabilities = resolveModelCapabilities(env)
+  return { input: capabilities.inputTokens, output: capabilities.outputTokens }
 }
 
 export const agentPolicy = (env: Env) => ({

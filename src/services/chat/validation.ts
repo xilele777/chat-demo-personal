@@ -1,4 +1,6 @@
 import { readMessageEvent } from '../api/parseEvent.js'
+import { validContextReport } from './contextReport.js'
+import { validBranchMemory } from './branchMemory.js'
 
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -129,6 +131,18 @@ export const validSessionStructure = (session: Record<string, unknown>): boolean
         message.mcpTools !== undefined &&
         (!Array.isArray(message.mcpTools) ||
           !message.mcpTools.every((block) => readMessageEvent({ type: 'mcp_tool_status', block })))
+      ) {
+        return false
+      }
+      if (
+        (message.branchMemory !== undefined && !validBranchMemory(message.branchMemory)) ||
+        !optionalString(message.operationRequestId) ||
+        (typeof message.operationRequestId === 'string' &&
+          !/^[a-zA-Z0-9_-]{1,160}$/.test(message.operationRequestId)) ||
+        (message.contextReports !== undefined &&
+          (!Array.isArray(message.contextReports) ||
+            message.contextReports.length > 100 ||
+            !message.contextReports.every(validContextReport)))
       ) {
         return false
       }
