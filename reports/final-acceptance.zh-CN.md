@@ -35,13 +35,13 @@
 
 发布前已导出生产 D1，保存在忽略提交目录 `.wrangler/release-backups/2026-11-25-final/pre-migration.sql`，777,584 字节，SHA-256 `1c21293026ab41a12eb92be2a067ada8ae051d5dceed94986dedd883ff59fb60`。导出可由本机 SQLite 完整载入；包含 19 个 sessions（含可能的墓碑）、1 个 MCP 配置、1 个 OAuth 记录。此备份含私有配置/凭据，未加入 Git，亦不是完整 R2/Secrets 灾备证明。
 
-`pnpm deploy:cloud` 成功：远程 `0005`、`0006`、`0007` 全部应用，随后发布 Worker/静态资源。线上版本 `fd8b0bec-2fc2-42c9-8e23-78187dc66870`（2026-11-25 18:17，Asia/Shanghai），100% 流量，地址 <https://personal-chat.2519175810.workers.dev>。部署代码对应 `81fccb8`，其后的提交仅包含文档与容量报告。
+`pnpm deploy:cloud` 成功：远程 `0005`、`0006`、`0007` 全部应用，随后发布 Worker/静态资源。线上版本 `fd8b0bec-2fc2-42c9-8e23-78187dc66870`（2026-11-25 18:17，Asia/Shanghai），100% 流量，地址 <https://personal-chat.2519175810.workers.dev>。部署代码对应 `81fccb8`，其后的提交仅包含测试、文档与容量报告，应用代码未改变。
 
 发布后远程 D1 核对：sessions/MCP/OAuth 数量仍为 19/1/1，generation `7c01aaeadc4083ac969844b04a240119`、revision `2e9059ff7cec9f216e8f3f2e58dfa221` 与备份一致；五张新增表、两个清理触发器齐全，迁移列表无待执行项。
 
 真实 Edge 浏览器线上检查通过：首页 200、密码登录表单可见、HTML 和两个主 JS/CSS 资源 SHA-256 与最终云端构建一致；未登录 `/api/config` 返回 401、`no-store` 和有效请求 ID。本机 Python 默认客户端受到 Cloudflare 1010 策略拦截，Node APIRequestContext 曾遇直连超时，改用实际浏览器网络完成核验；没有据这些客户端故障修改应用认证或防火墙。本轮未登录生产后执行生成/导入/清理，不调用生产模型，不将这次入口检查当作生产端到端业务验收。
 
-首轮六个提交按运行时基础、MCP、存储、聊天编排/UI、回归、文档分组，统一推送 `origin/main`。首次 Linux CI 的类型、lint、二十组专项和构建通过，outbox 浏览器夹具在保存尚在进行时过早解除失败拦截，导致快速环境直接保存成功、重试按钮不出现。补充提交将“重试按钮已出现”作为实际保存失败屏障，再恢复网络；应用代码无需变更或再次部署。最终 CI 结果见本次修复提交的 GitHub Actions 记录。
+首轮六个提交按运行时基础、MCP、存储、聊天编排/UI、回归、文档分组，统一推送 `origin/main`。首次 Linux CI 的类型、lint、二十组专项和构建通过，outbox 浏览器夹具在保存尚在进行时过早解除失败拦截，导致快速环境直接保存成功、重试按钮不出现。补充提交 `13a8006` 将“重试按钮已出现”作为实际保存失败屏障，再恢复网络；应用代码无需变更或再次部署。本地 outbox 复验及 [Linux CI 全流程](https://github.com/xilele777/chat-demo-personal/actions/runs/45595229187) 均通过，包含九组浏览器及容量。最后补充文档提交记录此结果，总计八个提交。
 
 原有 `mcp交接.md` 会话记录保留本地，不纳入应用发布提交；没有重置、清理或丢弃工作区内容。
 
