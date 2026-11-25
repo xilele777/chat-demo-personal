@@ -119,7 +119,9 @@ const env = {
           if (sql.startsWith('INSERT INTO mcp_approvals')) approvals++
         },
         async first() {
-          return { status: 'approved' }
+          return sql.startsWith('SELECT data')
+            ? { data: JSON.stringify(tool.server) }
+            : { status: 'approved' }
         },
       }
       return statement
@@ -141,6 +143,7 @@ const tool = {
     },
   },
 }
+Object.assign(tool.server, { enabled: true, disabledTools: [], tools: [tool.tool] })
 const runtime = new ToolRuntime([tool], env, false, { index: -1 }, new Map())
 runtime.catalog.load({ names: ['mcp_0'] })
 const run = async (input) => {

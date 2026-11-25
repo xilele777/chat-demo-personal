@@ -49,6 +49,15 @@ export async function checkMcpOAuth({ call, origin, cookie, mockPort, state }) {
   assert.equal(list.servers[0].oauthStatus, 'authorized')
   assert.equal(list.servers[0].tools.length, 2)
   assert.doesNotMatch(JSON.stringify(list), /access-|refresh-|client-|code_verifier/)
+  assert.equal(
+    (
+      await call('/mcp/servers/oauth-test', 'PUT', {
+        ...list.servers[0],
+        trustedReadTools: ['read_note'],
+      })
+    ).status,
+    200
+  )
   const chat = async () => {
     const response = await call('/anthropic/v1/messages', 'POST', {
       messages: [{ role: 'user', content: 'mcp-read' }],

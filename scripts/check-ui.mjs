@@ -191,8 +191,13 @@ try {
     .getByRole('navigation', { name: '设置' })
     .getByRole('button', { name: '模型', exact: true })
     .click()
+  const modelDialog = page.getByRole('dialog', { name: '设置' })
+  await expect(modelDialog).toContainText('输入预算 29,696 Token · 单次输出上限 2,048 Token')
+  await expect(modelDialog).toContainText('配置的上下文窗口：32,768 Token')
   await page.getByRole('textbox', { name: '添加模型 ID', exact: true }).fill('manual-model')
   await page.getByRole('button', { name: '添加并使用', exact: true }).click()
+  await expect(modelDialog).toContainText('输入预算 8,192 Token · 单次输出上限 2,048 Token')
+  await expect(modelDialog).toContainText('此模型尚未配置能力，暂用较小预算的文本模式。')
   await expect(
     page
       .getByRole('dialog', { name: '设置' })

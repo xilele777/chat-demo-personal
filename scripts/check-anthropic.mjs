@@ -181,7 +181,9 @@ const env = {
           }
         },
         async first() {
-          return { status: approvals.get(args[0]) }
+          return sql.startsWith('SELECT data')
+            ? { data: JSON.stringify(server) }
+            : { status: approvals.get(args[0]) }
         },
         async run() {
           if (sql.startsWith('INSERT INTO mcp_approvals')) approvals.set(args[0], 'pending')
@@ -195,6 +197,9 @@ const env = {
 }
 const run = async () => {
   modelRequests = []
+  server.tools = tools.map((tool) => ({ ...tool, annotations: { readOnlyHint: readonly } }))
+  server.trustedReadTools = readonly ? ['read_note'] : []
+  server.toolsDiscoveredAt = Date.now()
   const events = []
   for await (const event of anthropicReply(
     { system: 'test', messages: [{ role: 'user', content: 'use a note' }] },

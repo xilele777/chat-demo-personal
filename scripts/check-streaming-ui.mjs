@@ -48,6 +48,27 @@ const sse = [
 ]
   .map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
   .join('')
+const waitRequested = async () => {
+  let timer
+  try {
+    await Promise.race([
+      requested.promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          void page
+            .locator('body')
+            .innerText()
+            .then((body) =>
+              reject(new Error(`Model request was not dispatched within 20 seconds: ${body}`))
+            )
+            .catch(reject)
+        }, 20_000)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 try {
   await page.goto(origin)
   await page.getByLabel('访问密码', { exact: true }).fill('local-smoke-password-only')
@@ -110,7 +131,7 @@ try {
       .catch(() => {})
   })
   await page.getByRole('button', { name: '继续生成', exact: true }).click()
-  await requested.promise
+  await waitRequested()
   await page.waitForTimeout(2100)
   await expect(total).toHaveText('150 tokens')
   gate.resolve()
@@ -127,7 +148,7 @@ try {
   gate = Promise.withResolvers()
   requested = Promise.withResolvers()
   await page.getByRole('button', { name: '继续生成', exact: true }).click()
-  await requested.promise
+  await waitRequested()
   await page.waitForTimeout(400)
   await expect(total).toHaveText('270 tokens')
   await page.getByRole('button', { name: '停止生成', exact: true }).click()

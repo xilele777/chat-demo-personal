@@ -14,7 +14,12 @@
     "db:local": "wrangler d1 migrations apply personal-chat --local",
     "db:remote": "wrangler d1 migrations apply personal-chat --remote",
     "type:worker": "tsc -p tsconfig.worker.json",
-    "test": "pnpm test:context && pnpm test:agent && pnpm test:research && pnpm test:mcp-context && pnpm test:responses && pnpm test:product && pnpm test:anthropic && pnpm test:reliability && pnpm test:backup && pnpm test:outbox && pnpm test:tool-limits",
+    "test": "pnpm test:context && pnpm test:agent && pnpm test:research && pnpm test:mcp-context && pnpm test:responses && pnpm test:product && pnpm test:anthropic && pnpm test:reliability && pnpm test:backup && pnpm test:outbox && pnpm test:tool-limits && pnpm test:request-limits && pnpm test:model-profiles && pnpm test:generation-bounds && pnpm test:branch-memory && pnpm test:mcp-policy && pnpm test:mcp-cache && pnpm test:object-lifecycle && pnpm test:history-import && pnpm test:cloud-transport",
+    "test:generation-bounds": "node --import tsx scripts/check-generation-bounds.mjs",
+    "test:branch-memory": "node --import tsx scripts/check-branch-memory.mjs",
+    "test:mcp-policy": "node --import tsx scripts/check-mcp-policy.mjs",
+    "test:request-limits": "node --import tsx scripts/check-request-limits.mjs",
+    "test:model-profiles": "node --import tsx scripts/check-model-profiles.mjs",
     "test:outbox": "node --import tsx scripts/check-outbox.mjs",
     "test:tool-limits": "node --import tsx scripts/check-tool-limits.mjs",
     "test:backup": "node --import tsx scripts/check-backup.mjs",
@@ -34,7 +39,14 @@
     "test:cloud-ui": "node scripts/check-cloud-ui.mjs",
     "type": "tsc -p tsconfig.json",
     "lint": "oxlint src worker rspack.config.ts",
-    "format": "oxfmt --write ."
+    "format": "oxfmt --write .",
+    "test:mcp-cache": "node --import tsx scripts/check-mcp-cache.mjs",
+    "test:object-lifecycle": "node --import tsx scripts/check-object-lifecycle.mjs",
+    "test:history-import": "node --import tsx scripts/check-history-import.mjs",
+    "test:cloud-transport": "node --import tsx scripts/check-cloud-transport.mjs",
+    "test:capacity": "node scripts/check-cloud-ui.mjs check-capacity",
+    "test:coordination-ui": "node scripts/check-cloud-ui.mjs check-coordination-ui",
+    "test:disaster-recovery": "node --import tsx scripts/check-disaster-recovery.mjs"
   },
   "engines": {
     "node": ">=22.12.0"

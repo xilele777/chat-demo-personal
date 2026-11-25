@@ -249,7 +249,9 @@ const testEnv = {
           }
         },
         async first() {
-          return { status: approvals.get(args[0]) }
+          return sql.startsWith('SELECT data')
+            ? { data: JSON.stringify(server) }
+            : { status: approvals.get(args[0]) }
         },
         async run() {
           if (sql.startsWith('INSERT INTO mcp_approvals')) approvals.set(args[0], 'pending')
@@ -267,6 +269,12 @@ try {
       requests = []
       greeting = mode === 'greeting'
       readonly = mode !== 'approved' && mode !== 'denied'
+      server.tools = tools.map((tool) => ({
+        ...tool,
+        annotations: { ...tool.annotations, readOnlyHint: readonly },
+      }))
+      server.trustedReadTools = readonly ? tools.map((tool) => tool.name) : []
+      server.toolsDiscoveredAt = Date.now()
       decision = mode === 'denied' ? 'denied' : 'approved'
       const before = remoteCalls
       const body = {

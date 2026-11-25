@@ -26,6 +26,12 @@ let mcpReads = 0
 let mcpWrites = 0
 const oauth = mockOAuth(mockPort)
 const mock = createServer(async (req, res) => {
+  if (req.url === '/__mcp-counts') {
+    res
+      .writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ reads: mcpReads, writes: mcpWrites }))
+    return
+  }
   if (await oauth.handle(req, res)) return
   if (req.url === '/mcp' || req.url === '/oauth/mcp') {
     if (req.method === 'GET') {
@@ -99,7 +105,16 @@ const mock = createServer(async (req, res) => {
         res.writeHead(400).end()
         return
       }
-      result = { content: [{ type: 'text', text: `MCP ${message.params.name} result` }] }
+      result = {
+        content: [
+          {
+            type: 'text',
+            text: message.params.arguments?.query?.startsWith('capacity-result')
+              ? 'e'.repeat(1800 * 1024)
+              : `MCP ${message.params.name} result`,
+          },
+        ],
+      }
     } else result = {}
     res
       .writeHead(200, { 'Content-Type': 'application/json' })
@@ -187,8 +202,41 @@ const mock = createServer(async (req, res) => {
   const remoteDone = sentToProvider.messages.some(
     (message) => message.role === 'tool' && message.tool_call_id === 'call_mcp'
   )
+  if (question === 'mcp-write-hang' && remoteDone) {
+    // Headers arrive, then no event: browser recovery must retain the completed tool.
+    res.flushHeaders()
+    return
+  }
+  if (question === 'capacity-mcp' && !remoteDone && sentToProvider.tool_choice !== 'none') {
+    const target = sentToProvider.tools?.find((tool) =>
+      tool.function.description.includes('Read a note')
+    )
+    const alias = sentToProvider.messages[0].content.match(/(mcp_\d+):[^\n]* \/ read_note/)?.[1]
+    const tool_calls = target
+      ? Array.from({ length: 4 }, (_, index) => ({
+          index,
+          id: index === 0 ? 'call_mcp' : `call_capacity_${index}`,
+          type: 'function',
+          function: {
+            name: target.function.name,
+            arguments: JSON.stringify({ query: `capacity-result-${index}` }),
+          },
+        }))
+      : [
+          {
+            index: 0,
+            id: 'load_capacity',
+            type: 'function',
+            function: { name: 'mcp_load_tools', arguments: JSON.stringify({ names: [alias] }) },
+          },
+        ]
+    res.end(
+      `data: ${JSON.stringify({ choices: [{ delta: { tool_calls }, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`
+    )
+    return
+  }
   if (
-    ['mcp-read', 'mcp-write'].includes(question) &&
+    ['mcp-read', 'mcp-write', 'mcp-write-hang'].includes(question) &&
     !remoteDone &&
     sentToProvider.tool_choice !== 'none'
   ) {
@@ -261,6 +309,9 @@ const call = (route, method = 'GET', body) =>
     method,
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     headers: { 'Content-Type': 'application/json', Cookie: cookie },
+  }).then((response) => {
+    assert.match(response.headers.get('X-Request-ID') ?? '', /^[a-f0-9-]{36}$/)
+    return response
   })
 const session = (id, content = '第一版') => ({
   id,
@@ -310,6 +361,8 @@ try {
       '127.0.0.1',
       '--port',
       String(port),
+      '--inspector-port',
+      process.env.SMOKE_INSPECTOR_PORT ?? '9230',
       '--persist-to',
       persist,
       '--var',
@@ -324,6 +377,17 @@ try {
       'OPENAI_API_STYLE:chat_completions',
       '--var',
       'OPENAI_REASONING_EFFORTS:low,medium,high',
+      '--var',
+      `MODEL_PROFILES:${JSON.stringify({
+        'second-model': {
+          contextTokens: 32768,
+          maxOutputTokens: 2048,
+          images: true,
+          tools: true,
+          reasoningEfforts: ['low', 'medium', 'high'],
+          apiStyle: 'chat_completions',
+        },
+      })}`,
       '--var',
       'TAVILY_API_KEY:smoke-search',
       '--var',
@@ -562,6 +626,30 @@ try {
     200
   )
   assert.deepEqual(new Uint8Array(await (await call('/files/original')).arrayBuffer()), original)
+  const multipartOriginal = new Uint8Array(6 * 1024 * 1024).fill(42)
+  let multipartOffset = 0
+  const multipartResponse = await fetch(`${origin}/api/files/multipart-original`, {
+    method: 'PUT',
+    duplex: 'half',
+    headers: { Cookie: cookie, 'Content-Type': 'application/octet-stream' },
+    body: new ReadableStream({
+      pull(controller) {
+        if (multipartOffset === multipartOriginal.length) {
+          controller.close()
+          return
+        }
+        controller.enqueue(
+          multipartOriginal.subarray(multipartOffset, multipartOffset + 1024 * 1024)
+        )
+        multipartOffset += 1024 * 1024
+      },
+    }),
+  })
+  assert.equal(multipartResponse.status, 200, await multipartResponse.text())
+  assert.deepEqual(
+    new Uint8Array(await (await call('/files/multipart-original')).arrayBuffer()),
+    multipartOriginal
+  )
   const form = new FormData()
   form.append('file', new File(['附件内容'], 'note.txt', { type: 'text/plain' }))
   const attachment = await (
@@ -793,6 +881,7 @@ try {
 
   const mcpConfig = {
     name: 'Test MCP',
+    trustedReadTools: ['read_note'],
     url: `http://127.0.0.1:${mockPort}/mcp`,
     enabled: true,
     token: 'smoke-mcp',
@@ -858,6 +947,7 @@ try {
   assert.equal((await call('/sessions')).status, 401)
   console.log('PASS: same-origin API and logout')
   if (process.argv.includes('--serve')) {
+    process.send?.({ type: 'ready', persist })
     console.log(`Browser preview ready at ${origin} (temporary local data only).`)
     await new Promise((resolve) => {
       process.once('SIGINT', resolve)
@@ -875,8 +965,11 @@ try {
   throw error
 } finally {
   worker?.kill()
+  if (worker && worker.exitCode === null) {
+    await new Promise((resolve) => worker.once('exit', resolve))
+  }
   await new Promise((resolve) => mock.close(resolve))
   // The path is a directory allocated above under the explicit smoke-test prefix.
-  if (path.resolve(persist).startsWith(prefix))
+  if (process.env.SMOKE_KEEP_PERSIST !== 'true' && path.resolve(persist).startsWith(prefix))
     await rm(persist, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 })
 }

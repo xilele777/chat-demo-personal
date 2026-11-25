@@ -266,6 +266,17 @@ try {
     mimeType: 'application/zip',
     buffer: bytes,
   })
+  let lostCommitId
+  await page.route(
+    '**/api/history/imports/*/commit',
+    async (route) => {
+      const response = await route.fetch()
+      expect(response.ok()).toBe(true)
+      lostCommitId = route.request().url().split('/').at(-2)
+      await route.abort('connectionreset')
+    },
+    { times: 1 }
+  )
   await page
     .getByRole('dialog', { name: '确认导入历史对话？', exact: true })
     .getByRole('button', { name: '确认导入', exact: true })
@@ -274,6 +285,7 @@ try {
   const after = await detail()
   expect(after.session).toEqual(exported)
   expect(after.generation).not.toBe(before.generation)
+  expect(after.generation).toBe(lostCommitId)
   expect(await (await context.request.get(`${origin}/api/files/${fileId}`)).text()).toBe(original)
   await page.reload()
   await page

@@ -10,6 +10,10 @@ const checks = [
   'check-reliability-ui',
   'check-backup-ui',
   'check-outbox-ui',
+  'check-generation-ui',
+  'check-mcp-policy-ui',
+  'check-coordination-ui',
+  'check-capacity',
 ]
 const selected = process.argv.slice(2)
 if (selected.some((name) => !checks.includes(name))) {
@@ -25,11 +29,14 @@ const freePort = async () => {
   return port
 }
 const workerPort = await freePort(),
-  modelPort = await freePort()
+  modelPort = await freePort(),
+  inspectorPort = await freePort()
 const env = {
   ...process.env,
   SMOKE_WORKER_PORT: String(workerPort),
   SMOKE_MODEL_PORT: String(modelPort),
+  SMOKE_INSPECTOR_PORT: String(inspectorPort),
+  UI_INSPECTOR_PORT: String(inspectorPort),
   UI_ORIGIN: `http://127.0.0.1:${workerPort}`,
   UI_MODEL_PORT: String(modelPort),
   WRANGLER_SEND_METRICS: 'false',
@@ -45,7 +52,7 @@ try {
   await new Promise((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error(`Cloud UI server startup timed out.\n${logs}`)),
-      60_000
+      120_000
     )
     server.once('error', (error) => {
       clearTimeout(timer)
