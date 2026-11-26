@@ -285,6 +285,9 @@ export const en = {
   replyModelUnreported: 'The provider did not return a model name',
   replyModelIdentityHelp:
     'The name is supplied by the API and does not verify the underlying weights version. Continuations use the requested model.',
+  tokenPartialReported: '{count} (reported by some requests)',
+  tokenAccountingHelp:
+    'Totals include all answer versions and continuations. They do not represent the current branch context or remaining account quota. Requests without usage metrics are excluded.',
   completionServerBusyToast: 'Server busy, please try again later.',
   unknownError: 'Unknown error',
   replyRefused: "Sorry, that's beyond my current scope. Let's talk about something else.",

@@ -159,7 +159,8 @@ export const validSessionStructure = (session: Record<string, unknown>): boolean
             'cache_creation_input_tokens',
             'reasoning_tokens',
           ].every((key) => optionalNumber((message.usage as Record<string, unknown>)[key])) ||
-          !optionalBoolean((message.usage as Record<string, unknown>).cache_reported))
+          !optionalBoolean((message.usage as Record<string, unknown>).cache_reported) ||
+          !optionalBoolean((message.usage as Record<string, unknown>).reasoning_reported))
       ) {
         return false
       }

@@ -70,10 +70,16 @@ export const SessionTokenUsage = ({
   const cache = usage.cache_read_input_tokens
   const cacheKnown = usage.cache_reported ?? cache > 0
   const reasoningComplete = reported.every(
-    (message) => message.usage?.reasoning_tokens !== undefined
+    (message) => message.usage?.reasoning_reported ?? message.usage?.reasoning_tokens !== undefined
   )
   const rate = input > 0 && cacheKnown ? (cache / input) * 100 : undefined
   const format = (value: number) => value.toLocaleString()
+  const partial = (value: number, complete: boolean) =>
+    complete
+      ? format(value)
+      : value > 0
+        ? t('tokenPartialReported', { count: format(value) })
+        : t('tokenNotReported')
   const rateText =
     rate === undefined ? '—' : `${rate.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`
   const stat = (label: string, value: string, className?: string) => (
@@ -115,24 +121,19 @@ export const SessionTokenUsage = ({
             t('tokenReasoning'),
             usage.reasoning_tokens === undefined
               ? t('tokenNotReported')
-              : format(usage.reasoning_tokens)
+              : partial(usage.reasoning_tokens, reasoningComplete)
           )}
-          {stat(
-            t('tokenCacheRead'),
-            cacheKnown || cache > 0 ? format(cache) : t('tokenNotReported')
-          )}
+          {stat(t('tokenCacheRead'), partial(cache, cacheKnown))}
           {stat(
             t('tokenVisibleOutput'),
             !reasoningComplete
               ? t('tokenNotReported')
               : format(Math.max(0, output - (usage.reasoning_tokens ?? 0)))
           )}
-          {stat(
-            t('tokenCacheWrite'),
-            cacheKnown ? format(usage.cache_creation_input_tokens) : t('tokenNotReported')
-          )}
+          {stat(t('tokenCacheWrite'), partial(usage.cache_creation_input_tokens, cacheKnown))}
           {stat(t('tokenCacheRate'), rateText)}
         </dl>
+        <p>{t('tokenAccountingHelp')}</p>
         <div
           className={styles.bar}
           role="img"

@@ -203,6 +203,8 @@ export type MessageUsage = {
   output_tokens: number
   /** Included in output_tokens, never added to the total again. */
   reasoning_tokens?: number
+  /** False when an aggregate contains invocations without reasoning metrics. */
+  reasoning_reported?: boolean
   /** Distinguishes a reported zero cache hit from providers that omit cache metrics. */
   cache_reported?: boolean
   /** 仅当 message_delta 中有对外输出的搜索结果块时出现 */

@@ -38,7 +38,12 @@ export const addUsage = (
     cache_read_input_tokens:
       number(left?.cache_read_input_tokens) + number(right?.cache_read_input_tokens),
     ...(left?.reasoning_tokens !== undefined || right?.reasoning_tokens !== undefined
-      ? { reasoning_tokens: number(left?.reasoning_tokens) + number(right?.reasoning_tokens) }
+      ? {
+          reasoning_tokens: number(left?.reasoning_tokens) + number(right?.reasoning_tokens),
+          reasoning_reported: [left, right].every(
+            (usage) => !usage || (usage.reasoning_reported ?? usage.reasoning_tokens !== undefined)
+          ),
+        }
       : {}),
     cache_reported: [left, right].every(
       (usage) =>

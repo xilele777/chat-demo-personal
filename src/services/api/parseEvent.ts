@@ -190,6 +190,9 @@ const readUsage = (value: unknown): Partial<MessageUsage> | undefined => {
     return undefined
   }
   const result: Record<string, unknown> = { ...value }
+  if (typeof value.reasoning_reported !== 'boolean') {
+    delete result.reasoning_reported
+  }
   if (
     value.cache_reported !== undefined ||
     value.cache_read_input_tokens !== undefined ||

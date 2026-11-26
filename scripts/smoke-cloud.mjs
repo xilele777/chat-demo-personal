@@ -850,6 +850,7 @@ try {
     cache_read_input_tokens: 30,
     output_tokens: 40,
     reasoning_tokens: 20,
+    reasoning_reported: true,
     cache_reported: true,
   })
   const missingUsage = await (

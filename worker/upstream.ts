@@ -786,6 +786,9 @@ async function* openAIReply(body: ChatRequest, env: Env, signal: AbortSignal) {
       const result = yield* completionEvents(response, signal, state)
       if (result.usage && hasOpenAIUsage(result.usage)) {
         const usage = openAIUsage(result.usage)
+        totals.reasoning_reported =
+          (hasUsage ? totals.reasoning_reported !== false : true) &&
+          usage.reasoning_tokens !== undefined
         totals.cache_reported = hasUsage
           ? Boolean(totals.cache_reported && usage.cache_reported)
           : usage.cache_reported

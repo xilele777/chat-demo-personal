@@ -266,6 +266,9 @@ export const zh = {
   replyProviderModel: '接口返回模型：{model}',
   replyModelUnreported: '接口未返回模型名称',
   replyModelIdentityHelp: '返回名称由接口提供，不代表已经验证底层权重版本。续写沿用请求模型。',
+  tokenPartialReported: '{count}（部分请求已返回）',
+  tokenAccountingHelp:
+    '累计用量包含所有回答版本和续写，不代表当前分支占用的上下文，也不代表账户剩余额度。未返回用量的请求不计入累计。',
   completionServerBusyToast: '服务器繁忙，请稍后再试',
   unknownError: '未知错误',
   replyRefused: '你好，这个问题我暂时无法回答，让我们换个话题再聊聊吧。',
