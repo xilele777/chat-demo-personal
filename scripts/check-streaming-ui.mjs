@@ -211,6 +211,68 @@ try {
   console.log(
     'PASS: continuation keeps prior totals while pending, adds new usage once, displays public summaries and retains totals after cancellation'
   )
+  await page.unroute('**/api/anthropic/v1/messages')
+  const interruptedEvents = [
+    { type: 'message_start', message: { id: 'partial', model: 'returned-model-version' } },
+    {
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'text', text: '断流前收到的文字' },
+    },
+    { type: 'content_block_stop', index: 0 },
+    {
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn' },
+      usage: {
+        input_tokens: 100,
+        output_tokens: 30,
+        cache_read_input_tokens: 20,
+        cache_creation_input_tokens: 0,
+        cache_reported: true,
+        reasoning_tokens: 10,
+      },
+    },
+    // EOF after a stop reason must not be mistaken for message_stop.
+  ]
+  await page.route('**/api/anthropic/v1/messages', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      body: interruptedEvents
+        .map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`)
+        .join(''),
+    })
+  )
+  await page.getByPlaceholder('请输入消息').fill('断流状态验收')
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  await expect(page.getByText('连接在回答确认完成前中断', { exact: false })).toBeVisible()
+  await expect(page.getByText('断流前收到的文字', { exact: true })).toBeVisible()
+  await expect
+    .poll(async () => {
+      const value = await (await context.request.get(`${origin}/api/sessions/${id}`)).json()
+      return value.session.messages.at(-1).status
+    })
+    .toBe('error')
+  const modelDetails = page.locator('[data-model-details]').last()
+  await modelDetails.locator('summary').focus()
+  await page.keyboard.press('Enter')
+  await expect(modelDetails).toContainText('接口返回模型：returned-model-version')
+  await expect(modelDetails).toContainText('请求模型：test-model')
+  await usage.locator('summary').click()
+  await expect(usage).toContainText('20（部分请求已返回）')
+  await expect(usage).toContainText('10（部分请求已返回）')
+  await expect(usage).toContainText('不代表当前分支占用的上下文')
+  await page.setViewportSize({ width: 390, height: 844 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: `tmp/stream-boundaries-${id}-mobile.png` })
+  await page.reload()
+  await expect(page.getByText('断流前收到的文字', { exact: true })).toBeVisible()
+  await expect(page.getByText('连接在回答确认完成前中断', { exact: false })).toBeVisible()
+  await page.locator('[data-model-details]').last().locator('summary').click()
+  await expect(page.locator('[data-model-details]').last()).toContainText('returned-model-version')
+  console.log(
+    'PASS: interrupted answer persists as error, model aliases remain distinct, partial metrics are labelled and keyboard/mobile details survive reload'
+  )
 } finally {
   gate.resolve()
   await context.request.delete(`${origin}/api/sessions/${id}`).catch(() => {})
