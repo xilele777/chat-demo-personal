@@ -223,7 +223,13 @@ async function messages(body: ChatRequest, env: Env) {
           metadata.set(id, await env.FILES.head(`provider/${id}`))
         }
         const object = metadata.get(id)
-        cost += block.type === 'image' ? 4096 : (object?.size ?? bodyLimits.text) * 2 + 128
+        const textEstimate = Number(object?.customMetadata?.context_tokens_v1)
+        cost +=
+          object?.httpMetadata?.contentType?.startsWith('image/') || block.type === 'image'
+            ? 4096
+            : object && Number.isSafeInteger(textEstimate) && textEstimate >= 0
+              ? textEstimate
+              : (object?.size ?? bodyLimits.text) * 2 + 128
       }
     } else {
       cost = contextCost(message.content)
@@ -1116,9 +1122,17 @@ export async function upstream(request: Request, env: Env, path: string): Promis
       )
     }
     const id = `local_${crypto.randomUUID()}`
+    const text = image ? undefined : await file.text()
     await env.FILES.put(`provider/${id}`, file.stream(), {
       httpMetadata: { contentType: image ? file.type : 'text/plain; charset=utf-8' },
-      customMetadata: { name: file.name },
+      customMetadata: {
+        name: file.name,
+        ...(text === undefined
+          ? {}
+          : {
+              context_tokens_v1: String(contextCost(`[${file.name}]\n${text}`)),
+            }),
+      },
     })
     return json({
       id,
