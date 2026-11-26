@@ -814,8 +814,7 @@ try {
   })
   const cancellationStream = openAIStream(
     new Response(raw, { headers: { 'Content-Type': 'text/event-stream' } }),
-    new AbortController().signal,
-    'test-model'
+    new AbortController().signal
   )
   const cancellationReader = cancellationStream.body.getReader()
   await cancellationReader.read()

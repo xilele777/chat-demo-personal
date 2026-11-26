@@ -14,8 +14,7 @@ const convert = async (values) =>
   (
     await openAIStream(
       new Response(wire(values), { headers: { 'Content-Type': 'text/event-stream' } }),
-      new AbortController().signal,
-      'test'
+      new AbortController().signal
     ).text()
   )
     .split('\n')

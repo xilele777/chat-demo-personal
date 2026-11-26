@@ -80,6 +80,8 @@ export const applyEvent = (
   const next: AssistantMessage =
     reply.status === 'streaming' ? reply : { ...reply, status: 'streaming' }
   switch (event.type) {
+    case 'provider_model':
+      return { ...next, providerModel: event.model }
     case 'mcp_tool_status':
       return {
         ...next,
@@ -94,7 +96,11 @@ export const applyEvent = (
     case 'branch_memory':
       return { ...next, branchMemory: event.memory }
     case 'message_start':
-      return { ...next, usage: mergeUsageSnapshot(next.usage, event.message.usage) }
+      return {
+        ...next,
+        ...(event.message.model ? { providerModel: event.message.model } : {}),
+        usage: mergeUsageSnapshot(next.usage, event.message.usage),
+      }
     case 'content_block_start': {
       blockIndexes.delete(event.index)
       const block = toReplyBlock(event.content_block, now)

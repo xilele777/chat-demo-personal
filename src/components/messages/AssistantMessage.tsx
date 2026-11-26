@@ -23,6 +23,7 @@ import {
   type SelectMessageVersion,
 } from './BranchSwitcher.js'
 import styles from './AssistantMessage.module.css'
+import detailsStyles from './ContextDetails.module.css'
 import { McpToolActivity } from './McpToolActivity.js'
 import { ContextDetails } from './ContextDetails.js'
 import { BranchMemoryDetails } from './BranchMemoryDetails.js'
@@ -135,6 +136,18 @@ export const AssistantMessage = memo(function AssistantMessage({
       ) : null}
       {message.contextReports?.some((report) => report.omittedRounds > 0) ? (
         <ContextDetails reports={message.contextReports} sessionId={sessionId} />
+      ) : null}
+      {!streaming && message.model ? (
+        <details className={detailsStyles.details} data-model-details>
+          <summary>{t('replyModelDetails')}</summary>
+          <p>{t('replyRequestedModel', { model: message.model })}</p>
+          <p>
+            {message.providerModel
+              ? t('replyProviderModel', { model: message.providerModel })
+              : t('replyModelUnreported')}
+          </p>
+          <p>{t('replyModelIdentityHelp')}</p>
+        </details>
       ) : null}
       {!streaming && !refused && view.searchResults.length > 0 ? (
         <button

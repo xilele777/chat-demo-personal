@@ -221,13 +221,14 @@ export type ContentBlockDelta =
 
 /** 流式事件：SSE 的 event 名与 JSON 的 type 相同，以 message_stop 结束，不发送 [DONE] */
 export type MessageStreamEvent =
+  | { type: 'provider_model'; model: string }
   | { type: 'context_report'; report: import('../chat/contextReport.js').ContextReport }
   | { type: 'branch_memory'; memory: import('../chat/branchMemory.js').BranchMemory }
   | { type: 'mcp_tool_status'; block: McpToolBlock }
   | {
       type: 'message_start'
       /** id 为不带 msg_ 前缀的 UUID，等于响应头 x-ds-request-id */
-      message: { id: string; model: string; usage?: Partial<MessageUsage> }
+      message: { id: string; model?: string; usage?: Partial<MessageUsage> }
     }
   | { type: 'content_block_start'; index: number; content_block: OutputBlockStart }
   | { type: 'content_block_delta'; index: number; delta: ContentBlockDelta }

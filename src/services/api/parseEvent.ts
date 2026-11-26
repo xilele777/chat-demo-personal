@@ -225,6 +225,10 @@ export const readMessageEvent = (value: unknown): MessageStreamEvent | null => {
     return null
   }
   switch (value.type) {
+    case 'provider_model':
+      return isString(value.model) && value.model.trim() && value.model.length <= 200
+        ? { type: 'provider_model', model: value.model.trim() }
+        : null
     case 'ping':
       return { type: 'ping' }
     case 'context_report':
@@ -258,6 +262,12 @@ export const readMessageEvent = (value: unknown): MessageStreamEvent | null => {
         ...value,
         message: {
           ...value.message,
+          model:
+            isString(value.message.model) &&
+            value.message.model.trim() &&
+            value.message.model.length <= 200
+              ? value.message.model.trim()
+              : undefined,
           usage: readUsage(value.message.usage),
         },
       } as MessageStreamEvent

@@ -267,23 +267,29 @@ async function messages(body: ChatRequest, env: Env) {
   return { system, messages: expanded }
 }
 
-async function* normalizeOpenAI(
-  stream: ReadableStream<Uint8Array>,
-  signal: AbortSignal,
-  model: string
-) {
-  yield { type: 'message_start', message: { id: crypto.randomUUID(), model } }
+async function* normalizeOpenAI(stream: ReadableStream<Uint8Array>, signal: AbortSignal) {
+  yield { type: 'message_start', message: { id: crypto.randomUUID() } }
   let index = -1
   let active = ''
   let finish: string | null = null
   let ended = false
   let usage: Record<string, unknown> | undefined
+  let providerModel = ''
   const content = new OpenAIContent()
   for await (const event of readOpenAIEvents(stream, signal)) {
     if (event.data === '[DONE]') {
       ended = true
     }
     const chunk = ended ? {} : JSON.parse(event.data)
+    if (
+      typeof chunk.model === 'string' &&
+      chunk.model.trim() &&
+      chunk.model.length <= 200 &&
+      chunk.model.trim() !== providerModel
+    ) {
+      providerModel = chunk.model.trim()
+      yield { type: 'provider_model', model: providerModel }
+    }
     if (chunk.usage) {
       usage = mergeOpenAIUsage(usage, chunk.usage)
     }
@@ -350,13 +356,13 @@ async function* normalizeOpenAI(
   yield { type: 'message_stop' }
 }
 
-export function openAIStream(response: Response, signal: AbortSignal, model: string): Response {
+export function openAIStream(response: Response, signal: AbortSignal): Response {
   if (!response.body || !response.headers.get('Content-Type')?.includes('text/event-stream')) {
     throw new HttpError(502, 'The provider did not return an SSE stream')
   }
   const body = response.body
   return eventStream(
-    (streamSignal) => normalizeOpenAI(body, streamSignal, model),
+    (streamSignal) => normalizeOpenAI(body, streamSignal),
     signal,
     () => {
       // A user can cancel before the iterator has started reading the provider body.
@@ -628,12 +634,22 @@ async function* completionEvents(
   let refused = false
   let usage: Record<string, unknown> | undefined
   let providerOutput: Record<string, unknown>[] | undefined
+  let providerModel = ''
   const content = new OpenAIContent()
   for await (const event of readOpenAIEvents(response.body, signal)) {
     if (event.data === '[DONE]') {
       ended = true
     }
     const chunk = ended ? {} : JSON.parse(event.data)
+    if (
+      typeof chunk.model === 'string' &&
+      chunk.model.trim() &&
+      chunk.model.length <= 200 &&
+      chunk.model.trim() !== providerModel
+    ) {
+      providerModel = chunk.model.trim()
+      yield { type: 'provider_model', model: providerModel }
+    }
     if (chunk.error) {
       throw new Error(chunk.error.message ?? 'Upstream stream error')
     }
@@ -744,7 +760,7 @@ async function* openAIReply(body: ChatRequest, env: Env, signal: AbortSignal) {
       cache_reported: false,
     }
     let hasUsage = false
-    yield { type: 'message_start', message: { id: crypto.randomUUID(), model: env.UPSTREAM_MODEL } }
+    yield { type: 'message_start', message: { id: crypto.randomUUID() } }
     for (let round = 0; ; round++) {
       const final = runtime.exhausted || round >= runtime.policy.maxRounds
       const definitions = runtime.definitions('openai')
@@ -919,7 +935,7 @@ export async function* anthropicReply(body: ChatRequest, env: Env, signal: Abort
     if (mcp.failures.length) {
       converted.system += `\nUnavailable MCP connections: ${mcp.failures.join('; ')}. Explain when a requested task needs these tools.`
     }
-    yield { type: 'message_start', message: { id: crypto.randomUUID(), model: env.UPSTREAM_MODEL } }
+    yield { type: 'message_start', message: { id: crypto.randomUUID() } }
     const totals: MessageUsage = {
       input_tokens: 0,
       output_tokens: 0,

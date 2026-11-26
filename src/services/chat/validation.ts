@@ -59,6 +59,9 @@ export const validSessionStructure = (session: Record<string, unknown>): boolean
         typeof message.status !== 'string' ||
         !['pending', 'streaming', 'done', 'stopped', 'error'].includes(String(message.status)) ||
         !(message.model == null || typeof message.model === 'string') ||
+        !optionalString(message.providerModel) ||
+        (typeof message.providerModel === 'string' &&
+          (!message.providerModel.trim() || message.providerModel.length > 200)) ||
         !optionalBoolean(message.prefix) ||
         !optionalBoolean(message.thinking) ||
         !optionalBoolean(message.search) ||

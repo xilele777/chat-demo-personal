@@ -16,6 +16,7 @@ type ResponseEvent = {
   output_index?: number
   item?: Item
   response?: {
+    model?: string
     output?: Item[]
     usage?: Record<string, unknown>
     error?: { message?: string }
@@ -45,6 +46,9 @@ export async function* readOpenAIEvents(stream: ReadableStream<Uint8Array>, sign
       continue
     }
     const index = value.output_index ?? 0
+    if (value.response?.model?.trim()) {
+      yield event({ model: value.response.model })
+    }
     switch (value.type) {
       case 'response.output_text.delta':
         textStreamed.add(index)

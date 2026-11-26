@@ -279,6 +279,12 @@ export const en = {
     'The model stream is incomplete or malformed. Received content is preserved. Check API compatibility.',
   replyStreamInterrupted:
     'The connection ended before the answer was confirmed complete. Received content is preserved. Regenerating starts a new request.',
+  replyModelDetails: 'Model information',
+  replyRequestedModel: 'Requested model: {model}',
+  replyProviderModel: 'Provider model: {model}',
+  replyModelUnreported: 'The provider did not return a model name',
+  replyModelIdentityHelp:
+    'The name is supplied by the API and does not verify the underlying weights version. Continuations use the requested model.',
   completionServerBusyToast: 'Server busy, please try again later.',
   unknownError: 'Unknown error',
   replyRefused: "Sorry, that's beyond my current scope. Let's talk about something else.",

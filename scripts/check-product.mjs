@@ -71,8 +71,7 @@ for (const [field, delta] of [
   const sse = `data: ${JSON.stringify({ choices: [{ [field]: delta }] })}\n\ndata: ${JSON.stringify({ choices: [{ delta: { content: '正文' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`
   const response = openAIStream(
     new Response(sse, { headers: { 'Content-Type': 'text/event-stream' } }),
-    new AbortController().signal,
-    'test'
+    new AbortController().signal
   )
   const stream = await response.text()
   assert.match(stream, /thinking_delta/)
@@ -248,8 +247,7 @@ const normalized = await openAIStream(
     frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join('') + 'data: [DONE]\n\n',
     { headers: { 'Content-Type': 'text/event-stream' } }
   ),
-  new AbortController().signal,
-  'test'
+  new AbortController().signal
 ).text()
 const finalUsage = normalized
   .split('\n')

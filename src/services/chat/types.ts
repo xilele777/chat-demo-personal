@@ -80,6 +80,8 @@ export type AssistantMessage = MessageBranch & {
   createdAt: number
   /** 未记录模型时为 null，续写使用当前默认模型。 */
   model: ChatModel | null
+  /** Most recent model label actually returned by the provider; not a verified weights version. */
+  providerModel?: string
   /** 请求时是否开启深度思考 */
   thinking?: boolean
   /** 本次请求开始时间与累计处理时长，包含等待、工具调用和回答生成。 */

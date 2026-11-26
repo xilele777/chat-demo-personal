@@ -34,6 +34,9 @@ export async function* consumeAnthropic(
       throw new HttpError(502, event.error?.message ?? 'Provider stream error')
     }
     if (event.type === 'message_start') {
+      if (typeof event.message?.model === 'string' && event.message.model.trim()) {
+        yield { type: 'provider_model', model: event.message.model }
+      }
       Object.assign(usage, event.message?.usage ?? {})
       continue
     }
