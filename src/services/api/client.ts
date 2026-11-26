@@ -139,9 +139,23 @@ const hasFile = (body: CreateMessageRequest) =>
       message.content.some((block) => block.type === 'image' || block.type === 'document')
   )
 
+const messageEventTypes = new Set([
+  'message_start',
+  'message_delta',
+  'message_stop',
+  'content_block_start',
+  'content_block_delta',
+  'content_block_stop',
+  'provider_model',
+  'context_report',
+  'branch_memory',
+  'mcp_tool_status',
+  'ping',
+])
+
 /**
  * POST /anthropic/v1/messages（stream: true），逐个产出流式事件，收到 message_stop 时结束。
- * ping、保活注释与无法解析的内容不产出；中止请求时抛出 signal 的 AbortError。
+ * ping 与保活注释不产出；损坏的消息帧不能作为成功回答；中止时抛出 signal 的 AbortError。
  */
 export async function* streamMessage(
   apiKey: string,
@@ -182,6 +196,7 @@ export async function* streamMessage(
   if (!response.body || !contentType.includes('text/event-stream')) {
     throw await readErrorResponse(response, 'protocol', '')
   }
+  let stopReceived = false
   for await (const { event: eventName, data } of readServerSentEvents(response.body, signal, {
     firstEventMs: idleMs,
     idleMs,
@@ -192,7 +207,7 @@ export async function* streamMessage(
       payload = JSON.parse(data)
     } catch {
       if (eventName !== 'error') {
-        continue
+        throw new ApiError('protocol', { key: 'replyInvalidStream' })
       }
     }
     if (isErrorBody(payload)) {
@@ -203,13 +218,26 @@ export async function* streamMessage(
     }
     const event = readMessageEvent(payload)
     if (!event) {
+      const payloadType =
+        payload && typeof payload === 'object' && 'type' in payload ? payload.type : undefined
+      if (
+        messageEventTypes.has(eventName) ||
+        (typeof payloadType === 'string' && messageEventTypes.has(payloadType))
+      ) {
+        throw new ApiError('protocol', { key: 'replyInvalidStream' })
+      }
       continue
+    }
+    if (event.type === 'message_delta' && event.delta.stop_reason) {
+      stopReceived = true
+    }
+    if (event.type === 'message_stop' && !stopReceived) {
+      throw new ApiError('protocol', { key: 'replyInvalidStream' })
     }
     yield event
     if (event.type === 'message_stop') {
       return
     }
   }
-  // 服务端没有提供错误内容时保持为空，不推测断流原因。
-  throw new ApiError('interrupted', '')
+  throw new ApiError('interrupted', { key: 'replyStreamInterrupted' })
 }

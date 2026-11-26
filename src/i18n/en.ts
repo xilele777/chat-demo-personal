@@ -275,6 +275,10 @@ export const en = {
     'The API Key is invalid or has been deleted. Please replace it and try again.',
   replyInsufficientBalance: 'Insufficient account balance. Please top up and try again.',
   replyRateLimited: 'Too many requests. Please try again later.',
+  replyInvalidStream:
+    'The model stream is incomplete or malformed. Received content is preserved. Check API compatibility.',
+  replyStreamInterrupted:
+    'The connection ended before the answer was confirmed complete. Received content is preserved. Regenerating starts a new request.',
   completionServerBusyToast: 'Server busy, please try again later.',
   unknownError: 'Unknown error',
   replyRefused: "Sorry, that's beyond my current scope. Let's talk about something else.",

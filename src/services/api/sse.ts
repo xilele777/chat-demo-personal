@@ -168,7 +168,7 @@ export async function* readServerSentEvents(
     onAbort()
   }
   // TextDecoder 默认会去掉开头的 BOM；stream: true 保证多字节字符跨分片时不被截断
-  const textDecoder = new TextDecoder()
+  const textDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false })
   const decoder = new ServerSentEventDecoder(options.maxLineBytes, options.maxEventBytes)
   let finished = false
   try {

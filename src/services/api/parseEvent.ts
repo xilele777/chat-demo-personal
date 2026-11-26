@@ -166,6 +166,8 @@ const readDelta = (value: unknown): ContentBlockDelta | null => {
       return isString(value.signature) ? (value as ContentBlockDelta) : null
     case 'citations_delta':
       return isCitation(value.citation) ? (value as ContentBlockDelta) : null
+    case 'input_json_delta':
+      return isString(value.partial_json) ? (value as ContentBlockDelta) : null
     default:
       return null
   }

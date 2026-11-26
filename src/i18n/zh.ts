@@ -259,6 +259,8 @@ export const zh = {
   replyInvalidApiKey: 'API Key 无效或已被删除，请更换后重试',
   replyInsufficientBalance: '账户余额不足，请充值后重试',
   replyRateLimited: '请求过于频繁，请稍后再试',
+  replyInvalidStream: '模型返回的流式数据不完整或格式异常，已保留收到的内容。请检查接口兼容性。',
+  replyStreamInterrupted: '连接在回答确认完成前中断，已保留收到的内容。重新生成会发起一次新请求。',
   completionServerBusyToast: '服务器繁忙，请稍后再试',
   unknownError: '未知错误',
   replyRefused: '你好，这个问题我暂时无法回答，让我们换个话题再聊聊吧。',
