@@ -2,7 +2,7 @@
 
 A web chat tool that connects to your own API. Use your preferred model service for questions, reading documents, and discussing code. Keep history in your browser, or deploy to Cloudflare to share conversations and attachments across your phone and computer.
 
-[简体中文](README.md) | English · [Cloudflare deployment guide (Chinese)](DEPLOY.cloudflare.zh-CN.md)
+[简体中文](README.md) | English · [Cloudflare deployment guide (Chinese)](docs/deployment.zh-CN.md)
 
 ## Features
 
@@ -45,9 +45,9 @@ Cloud mode configures the protocol, base URL, and model in `wrangler.jsonc`, wit
 
 OpenAI / Anthropic modes can use [Tavily](https://tavily.com/) for web search. Standard modes support PNG, JPEG, GIF and WebP images up to 8 MiB, and text/code attachments up to 2 MiB. PDF, Office, and ebook parsing are not implemented. Speech requires the DeepSeek extension APIs. Attachments may need to be added again after switching providers.
 
-Cloud mode uses `MODEL_PROFILES` to configure each model's context window, input/output budgets, images, tools and reasoning efforts. Settings follow the selected model and clearly show unknown windows. Unconfigured additional models use text mode with smaller budgets. See the [deployment guide](DEPLOY.cloudflare.zh-CN.md#模型切换思考与-mcp). ZIP imports stage individual conversations before an atomic replacement; failed or oversized imports preserve existing history. The deployment guide records capacity and recovery limits.
+Cloud mode uses `MODEL_PROFILES` to configure each model's context window, input/output budgets, images, tools and reasoning efforts. Settings follow the selected model and clearly show unknown windows. Unconfigured additional models use text mode with smaller budgets. See the [deployment guide](docs/deployment.zh-CN.md#模型切换思考与-mcp). ZIP imports stage individual conversations before an atomic replacement; failed or oversized imports preserve existing history. The deployment guide records capacity and recovery limits.
 
-See the [deployment guide](DEPLOY.cloudflare.zh-CN.md) for configuration and compatibility details.
+See the [deployment guide](docs/deployment.zh-CN.md) for configuration and compatibility details.
 
 ## Getting started
 
@@ -70,7 +70,7 @@ pnpm dev:cloud
 
 Open <http://127.0.0.1:8787> and enter your access password. Development uses local database and attachment storage.
 
-To deploy to your own Cloudflare account, replace the account, database, bucket, and upstream configuration, create the resources, and set the Secrets following the [deployment guide (Chinese)](DEPLOY.cloudflare.zh-CN.md). Model requests, search, and hosting are billed by the respective providers.
+To deploy to your own Cloudflare account, replace the account, database, bucket, and upstream configuration, create the resources, and set the Secrets following the [deployment guide (Chinese)](docs/deployment.zh-CN.md). Model requests, search, and hosting are billed by the respective providers.
 
 ### Run static mode
 
@@ -96,7 +96,7 @@ History export in Settings preserves all message branches and their selections, 
 
 Deleting cloud conversations does not immediately remove R2 attachments or files already uploaded to the model provider. Automatic attachment cleanup is not implemented.
 
-New snapshots require this version or newer and cannot be imported into the original DeepSeek site. Restore clears provider upload handles, cloud revisions and stale tool approvals; unfinished tools are marked as having an unknown outcome. Legacy ZIPs retain their original data limitations. See the [internal review (Chinese)](REVIEW.zh-CN.md) for findings, fixes and remaining priorities.
+New snapshots require this version or newer and cannot be imported into the original DeepSeek site. Restore clears provider upload handles, cloud revisions and stale tool approvals; unfinished tools are marked as having an unknown outcome. Legacy ZIPs retain their original data limitations.
 
 ## Development
 
